@@ -23,6 +23,19 @@ add_sources("Code_uber.cpp"
 		"StdAfx.h"
 )
 
+add_sources("Code_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Runtime"
+        "Runtime/LayerMapReader.h"
+        "Runtime/LayerMapReader.cpp"
+)
+
+add_sources("Code_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Shared"
+        "Shared/LayerMapHeader.h"
+)
+
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CVarOverrides.h")
     add_sources("NoUberFile"
         PROJECTS Game

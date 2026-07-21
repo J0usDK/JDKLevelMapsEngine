@@ -6,27 +6,29 @@
 #include <CrySchematyc/Env/EnvPackage.h>
 #include <CrySchematyc/Utils/SharedString.h>
 
+#include "Runtime/LayerMapReader.h"
+
 // Included only once per DLL module.
 #include <CryCore/Platform/platform_impl.inl>
 
-CPlugin::~CPlugin()
+CJDKLavelMapsEditor::~CJDKLavelMapsEditor()
 {
 	gEnv->pSystem->GetISystemEventDispatcher()->RemoveListener(this);
 
 	if (gEnv->pSchematyc)
 	{
-		gEnv->pSchematyc->GetEnvRegistry().DeregisterPackage(CPlugin::GetCID());
+		gEnv->pSchematyc->GetEnvRegistry().DeregisterPackage(CJDKLavelMapsEditor::GetCID());
 	}
 }
 
-bool CPlugin::Initialize(SSystemGlobalEnvironment& env, const SSystemInitParams& initParams)
+bool CJDKLavelMapsEditor::Initialize(SSystemGlobalEnvironment& env, const SSystemInitParams& initParams)
 {
-	gEnv->pSystem->GetISystemEventDispatcher()->RegisterListener(this,"CPlugin");
+	gEnv->pSystem->GetISystemEventDispatcher()->RegisterListener(this,"CJDKLavelMapsEditor");
 
 	return true;
 }
 
-void CPlugin::OnSystemEvent(ESystemEvent event, UINT_PTR wparam, UINT_PTR lparam)
+void CJDKLavelMapsEditor::OnSystemEvent(ESystemEvent event, UINT_PTR wparam, UINT_PTR lparam)
 {
 	switch (event)
 	{
@@ -43,7 +45,7 @@ void CPlugin::OnSystemEvent(ESystemEvent event, UINT_PTR wparam, UINT_PTR lparam
 		{
 			gEnv->pSchematyc->GetEnvRegistry().RegisterPackage(
 				stl::make_unique<Schematyc::CEnvPackage>(
-					CPlugin::GetCID(),
+					CJDKLavelMapsEditor::GetCID(),
 					"EntityComponents",
 					"Crytek GmbH",
 					"Components",
@@ -56,4 +58,4 @@ void CPlugin::OnSystemEvent(ESystemEvent event, UINT_PTR wparam, UINT_PTR lparam
 	}
 }
 
-CRYREGISTER_SINGLETON_CLASS(CPlugin)
+CRYREGISTER_SINGLETON_CLASS(CJDKLavelMapsEditor)

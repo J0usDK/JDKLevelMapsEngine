@@ -7,15 +7,13 @@
 
 #include <CryEntitySystem/IEntityClass.h>
 
-class CPlugin 
-	: public Cry::IEnginePlugin
-	, public ISystemEventListener
+class CJDKLavelMapsEditor : public Cry::IEnginePlugin, public ISystemEventListener
 {
 public:
 	CRYINTERFACE_SIMPLE(Cry::IEnginePlugin)
-	CRYGENERATE_SINGLETONCLASS_GUID(CPlugin, "MyPlugin", "2711a23d-3848-4cdd-a95b-e9d88ffa23b0"_cry_guid)
+	CRYGENERATE_SINGLETONCLASS_GUID(CJDKLavelMapsEditor, "JDKLavelMapsEditor", "2711a23d-3848-4cdd-a95b-e9d88ffa23b0"_cry_guid)
 
-	virtual ~CPlugin();
+	virtual ~CJDKLavelMapsEditor();
 	
 	// Cry::IEnginePlugin
 	virtual bool Initialize(SSystemGlobalEnvironment& env, const SSystemInitParams& initParams) override;
