@@ -1,0 +1,8 @@
+# ==========================================
+# CryEngine Generated Directories & Artifacts
+# ==========================================
+bin/
+user/
+logbackups/
+solutions/
+.vs/
