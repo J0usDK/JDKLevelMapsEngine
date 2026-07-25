@@ -8,14 +8,6 @@ namespace JDKLevelMaps::Maps
 {
 	constexpr uint32 kEmptyTileOffset = 0xFFFFFFFF;
 
-	struct SLoadedMap
-	{
-		SMapHeader header;
-		std::unique_ptr<uint8[]> packedData;
-		size_t packedDataSize = 0;
-		std::vector<uint32> tileOffsets;
-	};
-
 	class CMapFileReader final
 	{
 	public:

@@ -4,7 +4,7 @@
 
 namespace JDKLevelMaps::Maps
 {
-	class IVegetationMap : public ILevelMap
+	class IVegetationMap : public virtual ILevelMap
 	{
 	public:
 		virtual uint8 GetDensity(MapLayers::EVegetationLayers layer, float worldX, float worldY) const = 0;

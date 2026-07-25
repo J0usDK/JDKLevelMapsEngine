@@ -3,10 +3,11 @@
 
 #include <CryThreading/IJobManager.h>
 
+#include "Runtime/Maps/Base/LoadedMap.h"
 #include "Runtime/Database/MapsDatabase.h"
 #include "Bootstrap/Reader/MapReader.h"
 
-#include "Runtime/Maps/VegetationMap.h"
+#include "Runtime/Maps/VegetationFullMap.h"
 
 void JDKLevelMaps::Bootstrap::CFullLoad::Initialize(Maps::Database::CMapsDatabase& db, const string& directory)
 {
@@ -81,7 +82,7 @@ std::unique_ptr<JDKLevelMaps::Maps::ILevelMap> JDKLevelMaps::Bootstrap::CFullLoa
 	{
 		case EMapType::VegetationDensity:
 		{
-			auto map = std::make_unique<Maps::CVegetationMap>(std::move(rawMap));
+			auto map = std::make_unique<Maps::CVegetationFullMap>(std::move(rawMap));
 			if (map->IsValid())
 				return map;
 			return nullptr;

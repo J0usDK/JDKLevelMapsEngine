@@ -56,8 +56,16 @@ add_sources("Runtime_uber.cpp"
 add_sources("Runtime_uber.cpp"
     PROJECTS Plugin
     SOURCE_GROUP "Runtime\\\\Maps"
-        "Runtime/Maps/VegetationMap.h"
-        "Runtime/Maps/VegetationMap.cpp"
+        "Runtime/Maps/VegetationFullMap.h"
+        "Runtime/Maps/VegetationFullMap.cpp"
+)
+
+add_sources("Runtime_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Runtime\\\\Maps\\\\Base"
+        "Runtime/Maps/Base/BaseFullMap.cpp"
+        "Runtime/Maps/Base/BaseFullMap.h"
+        "Runtime/Maps/Base/LoadedMap.h"
 )
 
 add_sources("Shared_uber.cpp"
