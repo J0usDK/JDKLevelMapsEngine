@@ -23,17 +23,51 @@ add_sources("Code_uber.cpp"
 		"StdAfx.h"
 )
 
-add_sources("Code_uber.cpp"
+add_sources("Bootstrap_uber.cpp"
     PROJECTS Plugin
-    SOURCE_GROUP "Runtime"
-        "Runtime/LayerMapReader.h"
-        "Runtime/LayerMapReader.cpp"
+    SOURCE_GROUP "Bootstrap"
+        "Bootstrap/BootstrapManager.h"
+        "Bootstrap/BootstrapManager.cpp"
+)
+add_sources("Bootstrap_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Bootstrap\\\\Loaders"
+        "Bootstrap/Loaders/ILoadingStrategy.h"
+        "Bootstrap/Loaders/FullLoad.h"
+        "Bootstrap/Loaders/FullLoad.cpp"
+)
+add_sources("Bootstrap_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Bootstrap\\\\Reader"
+		"Bootstrap/Reader/MapReader.h"
+        "Bootstrap/Reader/MapReader.cpp"
 )
 
-add_sources("Code_uber.cpp"
+add_sources("Runtime_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Runtime"
+)
+add_sources("Runtime_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Runtime\\\\Database"
+        "Runtime/Database/MapsDatabase.h"
+        "Runtime/Database/MapsDatabase.cpp"
+)
+add_sources("Runtime_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Runtime\\\\Maps"
+        "Runtime/Maps/VegetationMap.h"
+        "Runtime/Maps/VegetationMap.cpp"
+)
+
+add_sources("Shared_uber.cpp"
     PROJECTS Plugin
     SOURCE_GROUP "Shared"
-        "Shared/LayerMapHeader.h"
+        "Shared/MapHeader.h"
+        "Shared/MapLayers.h"
+        "Shared/ILevelMap.h"
+        "Shared/IJDKLevelMapsPlugin.h"
+        "Shared/IVegetationMap.h"
 )
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/CVarOverrides.h")

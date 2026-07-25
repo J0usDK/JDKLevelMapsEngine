@@ -2,24 +2,32 @@
 #pragma once
 
 #include <CrySystem/ICryPlugin.h>
-
 #include <CryGame/IGameFramework.h>
-
 #include <CryEntitySystem/IEntityClass.h>
 
-class CJDKLavelMapsEditor : public Cry::IEnginePlugin, public ISystemEventListener
+#include "Shared/IJDKLevelMapsPlugin.h"
+#include "Shared/ILevelMap.h"
+
+class CJDKLevelMapsEngine : public JDKLevelMaps::IJDKLevelMapsPlugin, public ISystemEventListener
 {
 public:
-	CRYINTERFACE_SIMPLE(Cry::IEnginePlugin)
-	CRYGENERATE_SINGLETONCLASS_GUID(CJDKLavelMapsEditor, "JDKLavelMapsEditor", "2711a23d-3848-4cdd-a95b-e9d88ffa23b0"_cry_guid)
+	CRYGENERATE_SINGLETONCLASS_GUID(CJDKLevelMapsEngine, "JDKLevelMapsEngine", "2711a23d-3848-4cdd-a95b-e9d88ffa23b0"_cry_guid)
 
-	virtual ~CJDKLavelMapsEditor();
+	CRYINTERFACE_BEGIN()
+		CRYINTERFACE_ADD(Cry::IEnginePlugin)
+		CRYINTERFACE_ADD(JDKLevelMaps::IJDKLevelMapsPlugin)
+	CRYINTERFACE_END()
+
+	virtual ~CJDKLevelMapsEngine();
 	
-	// Cry::IEnginePlugin
 	virtual bool Initialize(SSystemGlobalEnvironment& env, const SSystemInitParams& initParams) override;
-	// ~Cry::IEnginePlugin
-	
-	// ISystemEventListener
 	virtual void OnSystemEvent(ESystemEvent event, UINT_PTR wparam, UINT_PTR lparam) override;
-	// ~ISystemEventListener
+
+	virtual void Init(JDKLevelMaps::ELoadingMode mode, const string& directory) override;
+	virtual void Shutdown() override;
+	
+	virtual void LoadAll() override;
+	virtual void UnloadAll() override;
+
+	virtual const JDKLevelMaps::Maps::ILevelMap* GetMap(JDKLevelMaps::EMapType type) const override;
 };
