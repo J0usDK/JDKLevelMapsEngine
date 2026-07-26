@@ -19,6 +19,17 @@ namespace JDKLevelMaps::Maps
 			&& m_tileOffsets.size() == expectedSize;
 	}
 
+	const uint8* CBaseFullMap::GetTileData(size_t tileIndex) const
+	{
+		if (tileIndex >= m_tileOffsets.size())
+			return nullptr;
+
+		const uint32 offset = m_tileOffsets[tileIndex];
+		if (offset == kEmptyTileOffset)
+			return nullptr;
+		return m_packedData.get() + offset;
+	}
+
 	EMapType CBaseFullMap::GetType() const { return m_header.mapType; }
 	size_t CBaseFullMap::GetMemoryUsage() const { return sizeof(SMapHeader) + (m_tileOffsets.capacity() * sizeof(uint32)) + m_packedDataSize; }
 	bool CBaseFullMap::IsValid() const { return m_isValid; }

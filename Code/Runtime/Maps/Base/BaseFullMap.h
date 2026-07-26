@@ -20,9 +20,13 @@ namespace JDKLevelMaps::Maps
 		size_t GetMemoryUsage() const override;
 
 	protected:
+		const uint8* GetTileData(size_t tileIndex) const;
+
+	protected:
 		SMapHeader m_header;
 		bool m_isValid = false;
 
+	private:
 		std::unique_ptr<uint8[]> m_packedData;
 		size_t m_packedDataSize = 0;
 

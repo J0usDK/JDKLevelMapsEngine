@@ -35,6 +35,8 @@ namespace JDKLevelMaps::Core::Containers
 		// WARNING: Do not call while the table is rebuilding. Safe to call only during the Update phase.
 		void Reset();
 
+		size_t GetMemoryUsage() const;
+
 		void FlushRebuild();
 
 	private:

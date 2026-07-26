@@ -232,4 +232,6 @@ namespace JDKLevelMaps::Core::Containers
 		m_bIsDirty = false;
 		m_bIsRebuilding = false;
 	}
+
+	size_t COpenAddressTable::GetMemoryUsage() const { return m_table.capacity() * sizeof(SHashEntry); }
 }

@@ -1,19 +1,15 @@
 #include "StdAfx.h"
-#include "VegetationFullMap.h"
-
-#include "Runtime/Maps/Base/LoadedMap.h"
-#include "Bootstrap/Reader/MapReader.h"
-
+#include "VegetationSpatialMap.h"
 
 namespace JDKLevelMaps::Maps
 {
-	CVegetationFullMap::CVegetationFullMap(SLoadedMap&& loadedMap) : CBaseFullMap(std::move(loadedMap))
+	CVegetationSpatialMap::CVegetationSpatialMap(SMapHeader& header) : CBaseSpatialMap(header)
 	{
 		if (m_header.mapType != EMapType::VegetationDensity)
 			m_isValid = false;
 	}
 
-	uint8 CVegetationFullMap::GetDensity(MapLayers::EVegetationLayers layer, float worldX, float worldY) const
+	uint8 CVegetationSpatialMap::GetDensity(MapLayers::EVegetationLayers layer, float worldX, float worldY) const
 	{
 		if (!m_isValid)
 			return 0;
@@ -30,7 +26,7 @@ namespace JDKLevelMaps::Maps
 
 		const uint32 tileX = gridX / m_header.tileSize;
 		const uint32 tileY = gridY / m_header.tileSize;
-		const uint64 tileIndex = static_cast<uint64>(tileY) * m_header.tileCountX + tileX;
+		const uint32 tileIndex = static_cast<uint64>(tileY) * m_header.tileCountX + tileX;
 
 		const uint8* pTileData = GetTileData(tileIndex);
 		if (!pTileData)
@@ -39,7 +35,6 @@ namespace JDKLevelMaps::Maps
 		const uint32 localX = gridX % m_header.tileSize;
 		const uint32 localY = gridY % m_header.tileSize;
 		const uint32 localIndex = ((localY * m_header.tileSize) + localX) * MapLayers::kVegetationChannelCount + channel;
-
 		return pTileData[localIndex];
 	}
 }

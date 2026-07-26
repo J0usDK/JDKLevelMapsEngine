@@ -69,6 +69,8 @@ add_sources("Runtime_uber.cpp"
     SOURCE_GROUP "Runtime\\\\Maps"
         "Runtime/Maps/VegetationFullMap.h"
         "Runtime/Maps/VegetationFullMap.cpp"
+        "Runtime/Maps/VegetationSpatialMap.h"
+        "Runtime/Maps/VegetationSpatialMap.cpp"
 )
 
 add_sources("Runtime_uber.cpp"
@@ -76,6 +78,8 @@ add_sources("Runtime_uber.cpp"
     SOURCE_GROUP "Runtime\\\\Maps\\\\Base"
         "Runtime/Maps/Base/BaseFullMap.cpp"
         "Runtime/Maps/Base/BaseFullMap.h"
+        "Runtime/Maps/Base/BaseSpatialMap.h"
+        "Runtime/Maps/Base/BaseSpatialMap.cpp"
         "Runtime/Maps/Base/LoadedMap.h"
 )
 
