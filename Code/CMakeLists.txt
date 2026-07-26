@@ -23,6 +23,17 @@ add_sources("Code_uber.cpp"
 		"StdAfx.h"
 )
 
+add_sources("Core_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Core"
+)
+add_sources("Core_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Core\\\\Containers"
+        "Core/Containers/OpenAddressTable.h"
+        "Core/Containers/OpenAddressTable.cpp"
+)
+
 add_sources("Bootstrap_uber.cpp"
     PROJECTS Plugin
     SOURCE_GROUP "Bootstrap"
