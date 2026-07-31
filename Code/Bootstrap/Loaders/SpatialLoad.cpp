@@ -4,13 +4,38 @@
 #include "Shared/IMapAnchor.h"
 #include "Runtime/Database/MapsDatabase.h"
 #include "Runtime/Maps/Base/LoadedMap.h"
-#include "Runtime/Maps/Base/BaseSpatialMap.h"
 #include "Runtime/Maps/VegetationSpatialMap.h"
 #include "Bootstrap/Reader/MapReader.h"
 
 namespace JDKLevelMaps::Bootstrap
 {
 	void CSpatialLoad::Initialize(Maps::Database::CMapsDatabase& db, const string& directory)
+	{
+		LoadMapsAsync(db, directory);
+		AllocatePools(db);
+
+		for (auto& state : m_streamingStates)
+			FlushStreamingState(state);
+
+		if (!m_pendingDispatches.empty())
+			DispatchPendingRequests();
+	}
+
+	void CSpatialLoad::UnloadAll(Maps::Database::CMapsDatabase& db)
+	{
+		m_streamingStates.clear();
+		m_registeredDynamicAnchors.clear();
+		m_registeredStaticAnchors.clear();
+
+		m_loadingPool.clear();
+		m_freeLoadingSlots.clear();
+		m_pendingDispatches.clear();
+		m_runningJobs.clear();
+
+		db.UnregisterAll();
+	}
+
+	void CSpatialLoad::LoadMapsAsync(Maps::Database::CMapsDatabase& db, const string& directory)
 	{
 		std::vector<string> files = JDKLevelMaps::Maps::GetFiles(directory, "*.jdkm");
 		if (files.empty()) return;
@@ -29,8 +54,37 @@ namespace JDKLevelMaps::Bootstrap
 
 		gEnv->pJobManager->WaitForJob(jobSyncState);
 		db.RegisterMapsBatch(loadedResults);
+	}
 
+	uint32 CSpatialLoad::ComputeTileBudget(const SMapHeader& header) const
+	{
+		const uint64 totalTiles = static_cast<uint64>(header.tileCountX) * header.tileCountY;
+		uint64 budget = 0;
+
+		auto addBudget = [&](const auto& anchorList) -> bool
+		{
+			for (const auto& anchor : anchorList)
+			{
+				const uint64 side = static_cast<uint64>(anchor.radius) * 2 + 1;
+				budget += side * side;
+				if (budget >= totalTiles)
+					return true;
+			}
+			return false;
+		};
+
+		if (addBudget(m_registeredDynamicAnchors)) return static_cast<uint32>(totalTiles);
+		if (addBudget(m_registeredStaticAnchors)) return static_cast<uint32>(totalTiles);
+
+		return static_cast<uint32>(budget);
+	}
+
+	void CSpatialLoad::AllocatePools(const Maps::Database::CMapsDatabase& db)
+	{
 		m_streamingStates.clear();
+		uint32 totalBudget = 0;
+		uint32 maxMapBudget = 0;
+
 		for (const auto& pMap : db.GetMaps())
 		{
 			if (!pMap || !pMap->IsValid())
@@ -43,57 +97,27 @@ namespace JDKLevelMaps::Bootstrap
 			const uint32 tileBudget = ComputeTileBudget(pSpatialMap->GetHeader());
 			pSpatialMap->SetMaximalCapacity(tileBudget, pSpatialMap->GetTileByteSize());
 			m_streamingStates.emplace_back(pSpatialMap, pSpatialMap->GetMaxCapacity());
+
+			auto& state = m_streamingStates.back();
+			for (const auto& dyn : m_registeredDynamicAnchors)
+				state.anchorProcessor.RegisterDynamicAnchor(dyn.pAnchor, dyn.radius);
+			for (const auto& stat : m_registeredStaticAnchors)
+				state.anchorProcessor.RegisterPointAnchor(stat.id, stat.pos, stat.radius);
+
+			totalBudget += tileBudget;
+			maxMapBudget = std::max(maxMapBudget, tileBudget);
 		}
 
-		for (auto& state : m_streamingStates)
-		{
-			m_scratchDecrements.clear();
-			m_scratchIncrements.clear();
+		m_scratchDecrements.reserve(maxMapBudget);
+		m_scratchIncrements.reserve(maxMapBudget);
 
-			ProcessDynamicAnchors(state);
-			ProcessStaticAnchors(state);
+		m_loadingPool.resize(totalBudget);
+		m_freeLoadingSlots.reserve(totalBudget);
+		m_pendingDispatches.reserve(totalBudget);
+		m_runningJobs.reserve(totalBudget);
 
-			for (auto& [x, y] : m_scratchIncrements)
-				if (!IncrementTileRef(x, y, state))
-					state.deferredIncrements.emplace_back(x, y);
-
-			for (auto& [x, y] : m_scratchDecrements)
-				DecrementTileRef(x, y, state);
-		}
-
-		if (!m_pendingLoadings.empty())
-			DispatchPendingRequests();
-	}
-
-	void CSpatialLoad::UnloadAll(Maps::Database::CMapsDatabase& db)
-	{
-		m_streamingStates.clear();
-		m_dynamicAnchors.clear();
-		m_staticAnchors.clear();
-		db.UnregisterAll();
-	}
-
-	uint32 CSpatialLoad::ComputeTileBudget(const SMapHeader& header) const
-	{
-		const uint64 totalTiles = static_cast<uint64>(header.tileCountX) * header.tileCountY;
-		uint64 budget = 0;
-
-		for (const auto& anchor : m_dynamicAnchors)
-		{
-			const uint64 side = static_cast<uint64>(anchor.radius) * 2 + 1;
-			budget += side * side;
-			if (budget >= totalTiles)
-				return static_cast<uint32>(totalTiles);
-		}
-		for (const auto& anchor : m_staticAnchors)
-		{
-			const uint64 side = static_cast<uint64>(anchor.radius) * 2 + 1;
-			budget += side * side;
-			if (budget >= totalTiles)
-				return static_cast<uint32>(totalTiles);
-		}
-
-		return static_cast<uint32>(budget);
+		for (uint32 i = totalBudget; i > 0; --i)
+			m_freeLoadingSlots.push_back(i - 1);
 	}
 
 	std::unique_ptr<Maps::ILevelMap> CSpatialLoad::LoadMapInternal(const string& filePath)
@@ -128,56 +152,76 @@ namespace JDKLevelMaps::Bootstrap
 	void CSpatialLoad::RegisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 radius)
 	{
 		if (!pAnchor) return;
-		m_dynamicAnchors.push_back({ pAnchor, radius, INT32_MIN, INT32_MIN });
+		m_registeredDynamicAnchors.emplace_back(pAnchor, radius);
+		for (auto& state : m_streamingStates)
+			state.anchorProcessor.RegisterDynamicAnchor(pAnchor, radius);
 	}
 
 	void CSpatialLoad::UnregisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor)
 	{
-		for (auto& anchor : m_dynamicAnchors)
+		for (size_t i = 0; i < m_registeredDynamicAnchors.size(); ++i)
 		{
-			if (anchor.pAnchor == pAnchor)
+			if (m_registeredDynamicAnchors[i].pAnchor == pAnchor)
 			{
-				anchor.bPendingRemoval = true;
+				m_registeredDynamicAnchors[i] = m_registeredDynamicAnchors.back();
+				m_registeredDynamicAnchors.pop_back();
 				break;
 			}
 		}
+
+		for (auto& state : m_streamingStates)
+			state.anchorProcessor.UnregisterDynamicAnchor(pAnchor);
 	}
 
 	Streaming::TStaticAnchorID CSpatialLoad::RegisterPointAnchor(Vec3 anchorPos, uint16 radius)
 	{
-		m_staticAnchors.emplace_back(m_nextStaticAnchorId, std::move(anchorPos), radius, INT32_MIN, INT32_MIN);
-		return m_nextStaticAnchorId++;
+		const auto id = m_nextStaticAnchorID++;
+		m_registeredStaticAnchors.emplace_back(id, anchorPos, radius);
+
+		for (auto& state : m_streamingStates)
+			state.anchorProcessor.RegisterPointAnchor(id, anchorPos, radius);
+
+		return id;
 	}
 
-	void CSpatialLoad::UnregisterPointAnchor(Streaming::TStaticAnchorID anchorId)
+	void CSpatialLoad::UnregisterPointAnchor(Streaming::TStaticAnchorID anchorID)
 	{
-		for (auto& anchor : m_staticAnchors)
+		for (size_t i = 0; i < m_registeredStaticAnchors.size(); ++i)
 		{
-			if (anchor.id == anchorId)
+			if (m_registeredStaticAnchors[i].id == anchorID)
 			{
-				anchor.bPendingRemoval = true;
+				m_registeredStaticAnchors[i] = m_registeredStaticAnchors.back();
+				m_registeredStaticAnchors.pop_back();
 				break;
 			}
 		}
+
+		for (auto& state : m_streamingStates)
+			state.anchorProcessor.UnregisterPointAnchor(anchorID);
 	}
 
-	void CSpatialLoad::UpdatePointAnchor(Streaming::TStaticAnchorID anchorId, Vec3 pos)
+	void CSpatialLoad::UpdatePointAnchor(Streaming::TStaticAnchorID anchorID, Vec3 pos)
 	{
-		for (auto& anchor : m_staticAnchors)
+		for (auto& anchor : m_registeredStaticAnchors)
 		{
-			if (anchor.id == anchorId)
+			if (anchor.id == anchorID)
 			{
-				anchor.pos = std::move(pos);
+				anchor.pos = pos;
 				break;
 			}
 		}
+
+		for (auto& state : m_streamingStates)
+			state.anchorProcessor.UpdateStaticAnchor(anchorID, pos);
 	}
 
 	void CSpatialLoad::PreUpdate()
 	{
-		for (size_t i = 0; i < m_pendingLoadings.size();)
+		for (size_t i = 0; i < m_runningJobs.size();)
 		{
-			SPendingTileLoad& req = *m_pendingLoadings[i];
+			const uint32 poolIdx = m_runningJobs[i];
+			SPendingTileLoad& req = m_loadingPool[poolIdx];
+
 			if (req.jobState.IsRunning())
 			{
 				++i;
@@ -185,248 +229,141 @@ namespace JDKLevelMaps::Bootstrap
 			}
 
 			if (req.succeeded && !req.abandoned)
-				req.pTargetMap->CommitTile(req.tileIndex, req.reservedSlot);
+				req.pState->pMap->CommitTile(req.tileIndex, req.reservedSlot);
 			else
-				req.pTargetMap->ReleaseTileSlotWithoutCommit(req.reservedSlot);
+				req.pState->pMap->ReleaseTileSlotWithoutCommit(req.reservedSlot);
 
-			m_pendingLoadings[i] = std::move(m_pendingLoadings.back());
-			m_pendingLoadings.pop_back();
-		}
-
-		for (auto& state : m_streamingStates)
-		{
-			state.pMap->FlushPendingMaintenance();
-			state.tileRefCounts.FlushRebuild();
+			req.pState->activeJobs.Remove(req.tileIndex);
+			m_freeLoadingSlots.push_back(poolIdx);
+			m_runningJobs[i] = m_runningJobs.back();
+			m_runningJobs.pop_back();
 		}
 	}
 
 	void CSpatialLoad::PostUpdate(Maps::Database::CMapsDatabase& db)
 	{
 		for (auto& state : m_streamingStates)
-		{
-			m_scratchIncrements = std::move(state.deferredIncrements);
-			state.deferredIncrements.clear();
-			m_scratchDecrements.clear();
+			FlushStreamingState(state);
 
-			ProcessDynamicAnchors(state);
-			ProcessStaticAnchors(state);
-
-			for (auto& [x, y] : m_scratchIncrements)
-				if (!IncrementTileRef(x, y, state))
-					state.deferredIncrements.emplace_back(x, y);
-
-			for (auto& [x, y] : m_scratchDecrements)
-				DecrementTileRef(x, y, state);
-
-			state.pMap->FlushPendingMaintenance();
-			state.tileRefCounts.FlushRebuild();
-		}
-
-		if (!m_pendingLoadings.empty())
+		if (!m_pendingDispatches.empty())
 			DispatchPendingRequests();
 	}
 
-	void CSpatialLoad::ProcessDynamicAnchors(SMapStreamingState& state)
+	void CSpatialLoad::ProcessDeferred(SMapStreamingState& state)
 	{
-		const auto& header = state.pMap->GetHeader();
-
-		for (auto it = m_dynamicAnchors.begin(); it != m_dynamicAnchors.end();)
+		for (size_t i = 0; i < state.deferredIncrements.size();)
 		{
-			if (it->bPendingRemoval)
+			if (IncrementTileRef(state.deferredIncrements[i], state))
 			{
-				if (it->lastTileX != INT32_MIN)
-				{
-					const STileRect oldRect = ComputeRect(it->lastTileX, it->lastTileY, it->radius);
-					const STileRect emptyRect{ 0, -1, 0, -1 };
-
-					ForEachDiffTile(oldRect, emptyRect, [&](int32 x, int32 y) { m_scratchDecrements.emplace_back(x, y); });
-				}
-				it = m_dynamicAnchors.erase(it);
-				continue;
+				state.deferredIncrements[i] = state.deferredIncrements.back();
+				state.deferredIncrements.pop_back();
 			}
-
-			float worldX, worldY;
-			it->pAnchor->GetPosition(worldX, worldY);
-
-			int32 currentTileX, currentTileY;
-			WorldToTile(worldX, worldY, header, currentTileX, currentTileY);
-
-			if (currentTileX != it->lastTileX || currentTileY != it->lastTileY)
-			{
-				const STileRect newRect = ComputeRect(currentTileX, currentTileY, it->radius);
-				const STileRect oldRect = it->lastTileX != INT32_MIN ? ComputeRect(it->lastTileX, it->lastTileY, it->radius) : STileRect{ 0, -1, 0, -1 };
-
-				if (it->lastTileX != INT32_MIN)
-					ForEachDiffTile(oldRect, newRect, [&](int32 x, int32 y) { m_scratchDecrements.emplace_back(x, y); });
-				ForEachDiffTile(newRect, oldRect, [&](int32 x, int32 y) { m_scratchIncrements.emplace_back(x, y); });
-
-				it->lastTileX = currentTileX;
-				it->lastTileY = currentTileY;
-			}
-
-			++it;
+			else ++i;
 		}
 	}
 
-	void CSpatialLoad::ProcessStaticAnchors(SMapStreamingState& state)
+	void CSpatialLoad::FlushStreamingState(SMapStreamingState& state)
 	{
-		const auto& header = state.pMap->GetHeader();
+		m_scratchIncrements.clear();
+		m_scratchDecrements.clear();
 
-		for (auto it = m_staticAnchors.begin(); it != m_staticAnchors.end(); )
-		{
-			if (it->bPendingRemoval)
-			{
-				if (it->lastTileX != INT32_MIN)
-				{
-					const STileRect oldRect = ComputeRect(it->lastTileX, it->lastTileY, it->radius);
-					const STileRect emptyRect{ 0, -1, 0, -1 };
+		ProcessDeferred(state);
 
-					ForEachDiffTile(oldRect, emptyRect, [&](int32 x, int32 y) { m_scratchDecrements.emplace_back(x, y); });
-				}
-				it = m_staticAnchors.erase(it);
-				continue;
-			}
+		state.anchorProcessor.CalculateTileDiffs(m_scratchIncrements, m_scratchDecrements);
 
-			int32 currentTileX, currentTileY;
-			WorldToTile(it->pos.x, it->pos.y, header, currentTileX, currentTileY);
+		for (uint32 tileIndex : m_scratchIncrements)
+			if (!IncrementTileRef(tileIndex, state))
+				state.deferredIncrements.push_back(tileIndex);
 
-			if (currentTileX != it->lastTileX || currentTileY != it->lastTileY)
-			{
-				const STileRect newRect = ComputeRect(currentTileX, currentTileY, it->radius);
-				const STileRect oldRect = it->lastTileX != INT32_MIN ? ComputeRect(it->lastTileX, it->lastTileY, it->radius) : STileRect{ 0, -1, 0, -1 };
+		for (uint32 tileIndex : m_scratchDecrements)
+			DecrementTileRef(tileIndex, state);
 
-				if (it->lastTileX != INT32_MIN)
-					ForEachDiffTile(oldRect, newRect, [&](int32 x, int32 y) { m_scratchDecrements.emplace_back(x, y); });
-				ForEachDiffTile(newRect, oldRect, [&](int32 x, int32 y) { m_scratchIncrements.emplace_back(x, y); });
-
-				it->lastTileX = currentTileX;
-				it->lastTileY = currentTileY;
-			}
-
-			++it;
-		}
+		state.pMap->FlushPendingMaintenance();
+		state.tileRefCounts.FlushRebuild();
+		state.activeJobs.FlushRebuild();
 	}
 
 	void CSpatialLoad::DispatchPendingRequests()
 	{
-		for (auto& req : m_pendingLoadings)
+		for (uint32 poolIdx : m_pendingDispatches)
 		{
-			if (req->started || req->succeeded || req->abandoned)
-				continue;
+			SPendingTileLoad* pReq = &m_loadingPool[poolIdx];
 
-			SPendingTileLoad* pReq = req.get();
-			pReq->started = true;
+			if (pReq->abandoned)
+			{
+				pReq->pState->pMap->ReleaseTileSlotWithoutCommit(pReq->reservedSlot);
+				m_freeLoadingSlots.push_back(poolIdx);
+				continue;
+			}
+			m_runningJobs.push_back(poolIdx);
 
 			gEnv->pJobManager->AddLambdaJob("LoadSpatialTile", [pReq]()
 			{
-				const STileEntry& entry = pReq->pTargetMap->GetTileEntry(pReq->tileIndex);
-				pReq->succeeded = Maps::CMapFileReader::ReadTileRaw(pReq->pTargetMap->GetFilePath(), entry, pReq->pBuffer);
+				const STileEntry& entry = pReq->pState->pMap->GetTileEntry(pReq->tileIndex);
+				pReq->succeeded = Maps::CMapFileReader::ReadTileRaw(pReq->pState->pMap->GetFilePath(), entry, pReq->pBuffer);
 			}, JobManager::eRegularPriority, &pReq->jobState);
 		}
+		m_pendingDispatches.clear();
 	}
 
-	void CSpatialLoad::WorldToTile(float worldX, float worldY, const SMapHeader& header, int32& outTileX, int32& outTileY) const
+	bool CSpatialLoad::IncrementTileRef(uint32 tileIndex, SMapStreamingState& state)
 	{
-		const float tileWorldSize = header.cellSize * header.tileSize;
-		outTileX = static_cast<int32>((worldX - header.originX) / tileWorldSize);
-		outTileY = static_cast<int32>((worldY - header.originY) / tileWorldSize);
-	}
-
-	CSpatialLoad::STileRect CSpatialLoad::ComputeRect(int32 tileX, int32 tileY, uint16 radius)
-	{
-		return { tileX - radius, tileX + radius, tileY - radius, tileY + radius };
-	}
-
-	bool CSpatialLoad::IncrementTileRef(int32 tileX, int32 tileY, SMapStreamingState& state)
-	{
-		const auto& header = state.pMap->GetHeader();
-		if (tileX < 0 || tileX >= static_cast<int32>(header.tileCountX) || tileY < 0 || tileY >= static_cast<int32>(header.tileCountY))
-			return true;
-
-		const uint32 tileIndex = static_cast<uint32>(tileY) * header.tileCountX + static_cast<uint32>(tileX);
-		uint32 refCount = state.tileRefCounts.Find(tileIndex);
-
-		if (refCount != Core::Containers::kInvalidValue)
+		uint32* pRefCount = state.tileRefCounts.GetValuePtr(tileIndex);
+		if (pRefCount)
 		{
-			state.tileRefCounts.Insert(tileIndex, refCount + 1);
+			(*pRefCount)++;
 			return true;
 		}
+		return QueueTileLoad(tileIndex, state);
+	}
 
+	void CSpatialLoad::DecrementTileRef(uint32 tileIndex, SMapStreamingState& state)
+	{
+		uint32* pRefCount = state.tileRefCounts.GetValuePtr(tileIndex);
+
+		if (pRefCount)
+		{
+			if (*pRefCount > 1)
+				(*pRefCount)--;
+			else
+				ReleaseOrCancelTile(tileIndex, state);
+		}
+	}
+
+	bool CSpatialLoad::QueueTileLoad(uint32 tileIndex, SMapStreamingState& state)
+	{
 		uint8* pBuffer = nullptr;
 		uint16 slot = state.pMap->ReserveTileSlot(tileIndex, &pBuffer);
 		if (slot == Maps::kInvalidSlot)
 			return false;
 
 		state.tileRefCounts.Insert(tileIndex, 1);
-		m_pendingLoadings.emplace_back(std::make_unique<SPendingTileLoad>(tileIndex, slot, pBuffer, false, false, false, state.pMap));
+
+		CRY_ASSERT_MESSAGE(!m_freeLoadingSlots.empty(), "[JDKLevelMaps] Out of loading slots. Budget calculation failed.");
+		const uint32 poolSlot = m_freeLoadingSlots.back();
+		m_freeLoadingSlots.pop_back();
+
+		m_loadingPool[poolSlot].Init(&state, tileIndex, slot, pBuffer);
+
+		state.activeJobs.Insert(tileIndex, poolSlot);
+		m_pendingDispatches.push_back(poolSlot);
 		return true;
 	}
 
-	void CSpatialLoad::DecrementTileRef(int32 tileX, int32 tileY, SMapStreamingState& state)
+	void CSpatialLoad::ReleaseOrCancelTile(uint32 tileIndex, SMapStreamingState& state)
 	{
-		const auto& header = state.pMap->GetHeader();
-		if (tileX < 0 || tileX >= static_cast<int32>(header.tileCountX) || tileY < 0 || tileY >= static_cast<int32>(header.tileCountY))
-			return;
+		state.tileRefCounts.Remove(tileIndex);
 
-		const uint32 tileIndex = static_cast<uint32>(tileY) * header.tileCountX + static_cast<uint32>(tileX);
-		uint32 refCount = state.tileRefCounts.Find(tileIndex);
-
-		if (refCount != Core::Containers::kInvalidValue)
+		if (state.pMap->IsTileLoaded(tileIndex))
+			state.pMap->ReleaseTile(tileIndex);
+		else
 		{
-			if (refCount != 1)
-				state.tileRefCounts.Insert(tileIndex, refCount - 1);
-			else
+			const uint32 poolIdx = state.activeJobs.Find(tileIndex);
+			if (poolIdx != Core::Containers::kInvalidValue)
 			{
-				state.tileRefCounts.Remove(tileIndex);
-
-				if (!state.pMap->IsTileLoaded(tileIndex))
-					MarkRequestAbandoned(tileIndex, state.pMap);
-				else
-					state.pMap->ReleaseTile(tileIndex);
+				m_loadingPool[poolIdx].abandoned = true;
+				state.activeJobs.Remove(tileIndex);
 			}
-		}
-	}
-
-	void CSpatialLoad::MarkRequestAbandoned(uint32 tileIndex, Maps::CBaseSpatialMap* pMap)
-	{
-		for (auto& req : m_pendingLoadings)
-			if (req->pTargetMap == pMap && req->tileIndex == tileIndex)
-				{ req->abandoned = true; return; }
-	}
-
-	template<typename Func>
-	void CSpatialLoad::ForEachDiffTile(const STileRect& a, const STileRect& b, Func&& callback)
-	{
-		const int32 ox0 = std::max(a.minX, b.minX), ox1 = std::min(a.maxX, b.maxX);
-		const int32 oy0 = std::max(a.minY, b.minY), oy1 = std::min(a.maxY, b.maxY);
-		const bool hasOverlap = ox0 <= ox1 && oy0 <= oy1;
-
-		if (!hasOverlap)
-		{
-			for (int32 y = a.minY; y <= a.maxY; ++y)
-				for (int32 x = a.minX; x <= a.maxX; ++x)
-					callback(x, y);
-			return;
-		}
-
-		// Top
-		for (int32 y = a.minY; y < oy0; ++y)
-			for (int32 x = a.minX; x <= a.maxX; ++x)
-				callback(x, y);
-
-		// Bottom
-		for (int32 y = oy1 + 1; y <= a.maxY; ++y)
-			for (int32 x = a.minX; x <= a.maxX; ++x)
-				callback(x, y);
-
-		for (int32 y = oy0; y <= oy1; ++y)
-		{
-			//Left
-			for (int32 x = a.minX; x < ox0; ++x)
-				callback(x, y);
-			//Right
-			for (int32 x = ox1 + 1; x <= a.maxX; ++x)
-				callback(x, y);
 		}
 	}
 }

@@ -2,12 +2,9 @@
 #include <CryThreading/IJobManager.h>
 
 #include "ILoadingStrategy.h"
+#include "Runtime/Maps/Base/BaseSpatialMap.h"
 #include "Core/Containers/OpenAddressTable.h"
-
-namespace JDKLevelMaps
-{
-	struct SMapHeader;
-}
+#include "Core/AnchorProcessor.h"
 
 namespace JDKLevelMaps::Maps
 {
@@ -19,7 +16,6 @@ namespace JDKLevelMaps::Maps
 namespace JDKLevelMaps::Streaming
 {
 	class IMapAnchor;
-	using TStaticAnchorID = uint32;
 }
 
 namespace JDKLevelMaps::Bootstrap
@@ -50,106 +46,83 @@ namespace JDKLevelMaps::Bootstrap
 		{
 			Maps::CBaseSpatialMap* pMap = nullptr;
 			Core::Containers::COpenAddressTable tileRefCounts;
+			Core::Containers::COpenAddressTable activeJobs;
+			std::vector<uint32> deferredIncrements;
 
-			std::vector<std::pair<int32, int32>> deferredIncrements;
+			Streaming::CAnchorProcessor anchorProcessor;
 
-			explicit SMapStreamingState(Maps::CBaseSpatialMap* map, uint32 capacity) : pMap(map)
+			explicit SMapStreamingState(Maps::CBaseSpatialMap* map, uint32 capacity) : pMap(map), anchorProcessor(map->GetHeader(), map->GetTileWorldSizeInv())
 			{
 				tileRefCounts.Initialize(capacity);
+				activeJobs.Initialize(capacity);
 			}
-		};
-
-		struct SDynamicAnchor
-		{
-			const Streaming::IMapAnchor* pAnchor = nullptr;
-			uint16 radius = 0;
-
-			int32 lastTileX = INT32_MIN;
-			int32 lastTileY = INT32_MIN;
-			
-			bool bPendingRemoval = false;
-
-			SDynamicAnchor() {}
-			SDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 r, int32 ltX, int32 ltY)
-				: pAnchor(pAnchor), radius(r), lastTileX(ltX), lastTileY(ltY) { }
-		};
-		struct SStaticAnchor
-		{
-			Streaming::TStaticAnchorID id = 0;
-			Vec3 pos;
-			uint16 radius = 0;
-
-			int32 lastTileX = INT32_MIN;
-			int32 lastTileY = INT32_MIN;
-
-			bool bPendingRemoval = false;
-
-			SStaticAnchor() {}
-			SStaticAnchor(Streaming::TStaticAnchorID id, Vec3&& pos, uint16 r, int32 ltX, int32 ltY)
-				: id(id), pos(std::move(pos)), radius(r), lastTileX(ltX), lastTileY(ltY) {}
-		};
-
-		struct STileRect
-		{ 
-			int32 minX, maxX, minY, maxY; 
-
-			STileRect() {}
-			STileRect(int32 minX, int32 maxX, int32 minY, int32 maxY) : minX(minX), maxX(maxX), minY(minY), maxY(maxY) {}
 		};
 
 		struct SPendingTileLoad
 		{
+			uint8* pBuffer = nullptr;
+			SMapStreamingState* pState = nullptr;
 			JobManager::SJobState jobState;
 
 			uint32 tileIndex = 0;
 			uint16 reservedSlot = 0;
-			uint8* pBuffer = nullptr;
 
-			bool started = false;
 			bool succeeded = false;
 			bool abandoned = false;
 
-			Maps::CBaseSpatialMap* pTargetMap = nullptr;
+			void Init(SMapStreamingState* pState, uint32 idx, uint16 slot, uint8* pBuf)
+				{ this->pState = pState; tileIndex = idx; reservedSlot = slot; pBuffer = pBuf; succeeded = false; abandoned = false; }
+		};
 
-			SPendingTileLoad() { }
-			SPendingTileLoad(uint32 idx, uint16 slot, uint8* pBuf, bool started, bool succeeded, bool abandoned, Maps::CBaseSpatialMap* pMap)
-				: tileIndex(idx), reservedSlot(slot), pBuffer(pBuf), started(started), succeeded(succeeded), abandoned(abandoned), pTargetMap(pMap) { }
+		struct SRegisteredDynamic
+		{
+			const Streaming::IMapAnchor* pAnchor;
+			uint16 radius;
+
+			SRegisteredDynamic(const Streaming::IMapAnchor* pAnchor, uint16 r) : pAnchor(pAnchor), radius(r) {}
+		};
+
+		struct SRegisteredStatic
+		{
+			Streaming::TStaticAnchorID id;
+			Vec3 pos;
+			uint16 radius;
+
+			SRegisteredStatic(Streaming::TStaticAnchorID id, Vec3 pos, uint16 r) : id(id), pos(pos), radius(r) {}
 		};
 
 	private:
+		void LoadMapsAsync(Maps::Database::CMapsDatabase& db, const string& directory);
 		uint32 ComputeTileBudget(const SMapHeader& header) const;
+		void AllocatePools(const Maps::Database::CMapsDatabase& db);
 
 		std::unique_ptr<Maps::ILevelMap> LoadMapInternal(const string& filePath);
 		std::unique_ptr<Maps::ILevelMap> TryConstructMap(SMapHeader&& header, const string& filePath) const;
 
-		void ProcessDynamicAnchors(SMapStreamingState& state);
-		void ProcessStaticAnchors(SMapStreamingState& state);
-
+		void ProcessDeferred(SMapStreamingState& state);
+		void FlushStreamingState(SMapStreamingState& state);
 		void DispatchPendingRequests();
 
-		void WorldToTile(float worldX, float worldY, const SMapHeader& header, int32& outTileX, int32& outTileY) const;
-		STileRect ComputeRect(int32 tileX, int32 tileY, uint16 radius);
+		bool IncrementTileRef(uint32 tileIndex, SMapStreamingState& map);
+		void DecrementTileRef(uint32 tileIndex, SMapStreamingState& map);
 
-		bool IncrementTileRef(int32 tileX, int32 tileY, SMapStreamingState& map);
-		void DecrementTileRef(int32 tileX, int32 tileY, SMapStreamingState& map);
-
-		void MarkRequestAbandoned(uint32 tileIndex, Maps::CBaseSpatialMap* pMap);
-
-		template<typename Func>
-		void ForEachDiffTile(const STileRect& a, const STileRect& b, Func&& callback);
+		bool QueueTileLoad(uint32 tileIndex, SMapStreamingState& state);
+		void ReleaseOrCancelTile(uint32 tileIndex, SMapStreamingState& state);
 
 	private:
-		std::vector<SDynamicAnchor> m_dynamicAnchors;
-		std::vector<SStaticAnchor> m_staticAnchors;
-
-		Streaming::TStaticAnchorID m_nextStaticAnchorId = 0;
+		Streaming::TStaticAnchorID m_nextStaticAnchorID = 0;
+		std::vector<SRegisteredDynamic> m_registeredDynamicAnchors;
+		std::vector<SRegisteredStatic> m_registeredStaticAnchors;
 
 		std::vector<SMapStreamingState> m_streamingStates;
 
-		std::vector<std::unique_ptr<SPendingTileLoad>> m_pendingLoadings;
+		std::vector<SPendingTileLoad> m_loadingPool;
+		std::vector<uint32> m_freeLoadingSlots;
+		std::vector<uint32> m_pendingDispatches;
+		std::vector<uint32> m_runningJobs;
 
-		std::vector<std::pair<int32, int32>> m_scratchIncrements;
-		std::vector<std::pair<int32, int32>> m_scratchDecrements;
+		std::vector<uint32> m_scratchIncrements;
+		std::vector<uint32> m_scratchDecrements;
 	};
 
 }

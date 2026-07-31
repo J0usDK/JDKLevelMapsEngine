@@ -15,15 +15,16 @@ namespace JDKLevelMaps::Maps
 
 		virtual size_t GetTileByteSize() const = 0;
 
-		EMapType GetType() const override;
-		const char* GetFilePath() const override;
-		bool IsValid() const override;
+		EMapType GetType() const final override;
+		const char* GetFilePath() const final override;
+		bool IsValid() const final override;
 		size_t GetMemoryUsage() const override;
-		const SMapHeader& GetHeader() const override;
-		uint32 GetMaxCapacity() const override;
+		const SMapHeader& GetHeader() const final override;
+		uint32 GetMaxCapacity() const final override;
+		float GetTileWorldSizeInv() const;
 
-		CBaseSpatialMap* AsSpatialMap() override;
-		const CBaseSpatialMap* AsSpatialMap() const override;
+		CBaseSpatialMap* AsSpatialMap() final override;
+		const CBaseSpatialMap* AsSpatialMap() const final override;
 
 		void SetMaximalCapacity(uint32 capacity, size_t tileByteSize);
 		bool IsTileLoaded(uint32 tileIndex) const;
@@ -53,5 +54,7 @@ namespace JDKLevelMaps::Maps
 
 		size_t m_tileByteSize = 0;
 		string m_mapFilePath;
+
+		float m_tileWorldSizeInv = 1.0f;
 	};
 }

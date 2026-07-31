@@ -15,6 +15,9 @@ namespace JDKLevelMaps::Maps
 			&& m_header.tileCountX > 0
 			&& m_header.tileCountY > 0
 			&& totalTiles <= std::numeric_limits<uint32>::max();
+
+		const float tileWorldSize = m_header.cellSize * static_cast<float>(m_header.tileSize);
+		m_tileWorldSizeInv = tileWorldSize > 0.0001f ? 1.0f / tileWorldSize : 1.0f;
 	}
 
 	void CBaseSpatialMap::SetMaximalCapacity(uint32 capacity, size_t tileByteSize)
@@ -106,6 +109,7 @@ namespace JDKLevelMaps::Maps
 	size_t CBaseSpatialMap::GetMemoryUsage() const { return sizeof(SMapHeader) + m_tilePool.capacity() + m_lookupTable.GetMemoryUsage(); }
 	const SMapHeader& CBaseSpatialMap::GetHeader() const { return m_header; }
 	uint32 CBaseSpatialMap::GetMaxCapacity() const { return static_cast<uint32>(m_freeSlots.capacity()); }
+	float CBaseSpatialMap::GetTileWorldSizeInv() const { return m_tileWorldSizeInv; }
 
 	CBaseSpatialMap* CBaseSpatialMap::AsSpatialMap() { return this; }
 	const CBaseSpatialMap* CBaseSpatialMap::AsSpatialMap() const { return this; }

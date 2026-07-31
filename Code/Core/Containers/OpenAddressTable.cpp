@@ -67,6 +67,32 @@ namespace JDKLevelMaps::Core::Containers
 		}
 	}
 
+	uint32* COpenAddressTable::GetValuePtr(uint32 key)
+	{
+		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
+
+		if (m_table.empty())
+			return nullptr;
+
+#if !defined(_RELEASE)
+		uint32 dbgProbes = 0;
+#endif
+		uint32 idx = Hash(key) & m_mask;
+		for (;;)
+		{
+#if !defined(_RELEASE)
+			CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop in GetValuePtr().");
+#endif
+
+			SHashEntry& e = m_table[idx];
+			if (e.key == key)
+				return &e.value;
+			if (e.key == kInvalidKey)
+				return nullptr;
+			idx = (idx + 1) & m_mask;
+		}
+	}
+
 	void COpenAddressTable::Insert(uint32 key, uint32 value)
 	{
 		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");

@@ -24,6 +24,9 @@ namespace JDKLevelMaps::Core::Containers
 		uint32 Find(uint32 key) const;
 
 		// WARNING: Do not call while the table is rebuilding. Safe to call only during the Update phase.
+		uint32* GetValuePtr(uint32 key);
+
+		// WARNING: Do not call while the table is rebuilding. Safe to call only during the Update phase.
 		void Insert(uint32 key, uint32 value);
 
 		// WARNING: Do not call while the table is rebuilding. Safe to call only during the Update phase.
