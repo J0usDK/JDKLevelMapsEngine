@@ -73,6 +73,25 @@ namespace JDKLevelMaps::Maps
 		return true;
 	}
 
+	bool CMapFileReader::ReadTileRaw(const char* filePath, const STileEntry& entry, uint8* pDestBuffer)
+	{
+		if (entry.flags == 1 || entry.byteSize == 0 || entry.fileOffset == 0)
+			return true;
+
+		FILE* pFile = gEnv->pCryPak->FOpen(filePath, "rb");
+		if (!pFile)
+			return false;
+
+		CRY_ASSERT_MESSAGE(entry.fileOffset <= static_cast<uint64>(std::numeric_limits<long>::max()),
+			"[JDKLevelMaps] Tile offset exceeds 2GB limit! Map is too large for 32-bit FSeek.");
+
+		gEnv->pCryPak->FSeek(pFile, static_cast<long>(entry.fileOffset), SEEK_SET);
+		const bool ok = gEnv->pCryPak->FReadRaw(pDestBuffer, 1, entry.byteSize, pFile) == entry.byteSize;
+
+		gEnv->pCryPak->FClose(pFile);
+		return ok;
+	}
+
 	bool CMapFileReader::ThrowError(bool closeFile, const char* format, ...)
 	{
 		if (closeFile)
@@ -84,13 +103,15 @@ namespace JDKLevelMaps::Maps
 		vsnprintf(buffer, sizeof(buffer), format, args);
 		va_end(args);
 
-		CryWarning(VALIDATOR_MODULE_ASSETS, VALIDATOR_ERROR, buffer);
+		CryWarning(VALIDATOR_MODULE_ASSETS, VALIDATOR_ERROR, "%s", buffer);
 
 		return false;
 	}
 
 	const SMapHeader& CMapFileReader::GetHeader() const { return m_header; }
+	SMapHeader CMapFileReader::TakeHeader() { return std::move(m_header); }
 	const std::vector<STileEntry>& CMapFileReader::GetDirectory() const { return m_directory; }
+	std::vector<STileEntry> CMapFileReader::TakeDirectory() { return std::move(m_directory); }
 	size_t CMapFileReader::GetTotalPayloadSize() const { return m_totalPayloadSize; }
 
 

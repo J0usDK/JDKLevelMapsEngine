@@ -24,7 +24,9 @@ namespace JDKLevelMaps::Maps::Database
 		void UnregisterMap(EMapType type);
 		void UnregisterAll();
 
+		const std::vector<std::unique_ptr<ILevelMap>>& GetMaps() const;
 		const ILevelMap* GetMap(EMapType type) const;
+		ILevelMap* GetMap(EMapType type);
 
 	private:
 		std::vector<std::unique_ptr<ILevelMap>> m_levelMaps;

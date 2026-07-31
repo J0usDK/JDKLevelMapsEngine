@@ -18,10 +18,13 @@ namespace JDKLevelMaps::Maps
 		void Close();
 
 		const SMapHeader& GetHeader() const;
+		SMapHeader TakeHeader();
 		const std::vector<STileEntry>& GetDirectory() const;
+		std::vector<STileEntry> TakeDirectory();
 		size_t GetTotalPayloadSize() const;
 
 		bool ReadTile(uint32 tileIndex, uint8* pDestBuffer);
+		static bool ReadTileRaw(const char* filePath, const STileEntry& entry, uint8* pDestBuffer);
 
 	private:
 		bool ReadHeader();

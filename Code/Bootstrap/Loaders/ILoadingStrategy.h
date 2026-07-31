@@ -1,5 +1,12 @@
 #pragma once
+#include <CryMath/Cry_Math.h>
 #include <CryString/CryString.h>
+
+namespace JDKLevelMaps::Streaming
+{
+	class IMapAnchor;
+	using TStaticAnchorID = uint32;
+}
 
 namespace JDKLevelMaps::Maps::Database
 {
@@ -15,5 +22,15 @@ namespace JDKLevelMaps::Bootstrap
 
 		virtual void Initialize(Maps::Database::CMapsDatabase& db, const string& directory) = 0;
 		virtual void UnloadAll(Maps::Database::CMapsDatabase& db) = 0;
+
+		virtual void RegisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 radius) {}
+		virtual void UnregisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor) {}
+
+		virtual Streaming::TStaticAnchorID RegisterPointAnchor(Vec3 anchorPos, uint16 radius) { return 0; }
+		virtual void UnregisterPointAnchor(Streaming::TStaticAnchorID id) {}
+		virtual void UpdatePointAnchor(Streaming::TStaticAnchorID id, Vec3 pos) {}
+
+		virtual void PreUpdate() {}
+		virtual void PostUpdate(Maps::Database::CMapsDatabase& db) {}
 	};
 }

@@ -12,5 +12,6 @@ namespace JDKLevelMaps::Maps
 		std::unique_ptr<uint8[]> packedData;
 		size_t packedDataSize = 0;
 		std::vector<uint32> tileOffsets;
+		string mapFilePath;
 	};
 }

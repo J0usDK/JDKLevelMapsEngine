@@ -1,13 +1,20 @@
 #include "StdAfx.h"
 #include "BaseSpatialMap.h"
 
+#include <limits>
+
 namespace JDKLevelMaps::Maps
 {
-	CBaseSpatialMap::CBaseSpatialMap(const SMapHeader& header) : m_header(header)
+	CBaseSpatialMap::CBaseSpatialMap(SMapHeader&& header, const string& mapFilePath) : m_header(std::move(header)), m_mapFilePath(mapFilePath)
 	{
+		const uint64 totalTiles = static_cast<uint64>(m_header.tileCountX) * m_header.tileCountY;
+
 		m_isValid = m_header.gridWidth > 0 && m_header.gridHeight > 0
 			&& m_header.cellSize > 0.0f
-			&& m_header.tileSize > 0;
+			&& m_header.tileSize > 0
+			&& m_header.tileCountX > 0
+			&& m_header.tileCountY > 0
+			&& totalTiles <= std::numeric_limits<uint32>::max();
 	}
 
 	void CBaseSpatialMap::SetMaximalCapacity(uint32 capacity, size_t tileByteSize)
@@ -50,6 +57,7 @@ namespace JDKLevelMaps::Maps
 
 	void CBaseSpatialMap::CommitTile(uint32 tileIndex, uint16 slot)
 	{
+		CRY_ASSERT_MESSAGE(!IsTileLoaded(tileIndex), "[JDKLevelMaps] CommitTile called for tileIndex already committed - slot leak");
 		m_lookupTable.Insert(tileIndex, slot);
 	}
 
@@ -63,12 +71,28 @@ namespace JDKLevelMaps::Maps
 		m_freeSlots.push_back(slot);
 	}
 
+	void CBaseSpatialMap::ReleaseTileSlotWithoutCommit(uint16 slot)
+	{
+		m_freeSlots.push_back(slot);
+	}
+
+	void CBaseSpatialMap::SetTileDirectory(std::vector<STileEntry>&& directory)
+	{
+		m_tileDirectory = std::move(directory);
+	}
+
+	const STileEntry& CBaseSpatialMap::GetTileEntry(uint32 tileIndex) const
+	{
+		CRY_ASSERT_MESSAGE(tileIndex < m_tileDirectory.size(), "[JDKLevelMaps] tileIndex out of range");
+		return m_tileDirectory[tileIndex];
+	}
+
 	void CBaseSpatialMap::FlushPendingMaintenance()
 	{
 		m_lookupTable.FlushRebuild();
 	}
 
-	const uint8* CBaseSpatialMap::GetTileData(size_t tileIndex) const
+	const uint8* CBaseSpatialMap::GetTileData(uint32 tileIndex) const
 	{
 		const uint32 slot = m_lookupTable.Find(tileIndex);
 		if (slot == Core::Containers::kInvalidValue)
@@ -77,6 +101,12 @@ namespace JDKLevelMaps::Maps
 	}
 
 	EMapType CBaseSpatialMap::GetType() const { return m_header.mapType; }
+	const char* CBaseSpatialMap::GetFilePath() const { return m_mapFilePath.c_str(); }
 	bool CBaseSpatialMap::IsValid() const { return m_isValid; }
 	size_t CBaseSpatialMap::GetMemoryUsage() const { return sizeof(SMapHeader) + m_tilePool.capacity() + m_lookupTable.GetMemoryUsage(); }
+	const SMapHeader& CBaseSpatialMap::GetHeader() const { return m_header; }
+	uint32 CBaseSpatialMap::GetMaxCapacity() const { return static_cast<uint32>(m_freeSlots.capacity()); }
+
+	CBaseSpatialMap* CBaseSpatialMap::AsSpatialMap() { return this; }
+	const CBaseSpatialMap* CBaseSpatialMap::AsSpatialMap() const { return this; }
 }

@@ -19,5 +19,6 @@ namespace JDKLevelMaps::Maps
 		~CVegetationFullMap() override = default;
 
 		uint8 GetDensity(MapLayers::EVegetationLayers layer, float worldX, float worldY) const override;
+		virtual const Maps::IVegetationMap* AsVegetationMap() const override;
 	};
 }

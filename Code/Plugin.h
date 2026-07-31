@@ -8,7 +8,13 @@
 #include "Shared/IJDKLevelMapsPlugin.h"
 #include "Shared/ILevelMap.h"
 
-class CJDKLevelMapsEngine : public JDKLevelMaps::IJDKLevelMapsPlugin, public ISystemEventListener
+namespace JDKLevelMaps::Streaming
+{
+	class IMapAnchor;
+	using TStaticAnchorID = uint32;
+}
+
+class CJDKLevelMapsEngine : public JDKLevelMaps::IJDKLevelMapsPlugin, public ISystemEventListener, public IGameFrameworkListener
 {
 public:
 	CRYGENERATE_SINGLETONCLASS_GUID(CJDKLevelMapsEngine, "JDKLevelMapsEngine", "2711a23d-3848-4cdd-a95b-e9d88ffa23b0"_cry_guid)
@@ -23,10 +29,24 @@ public:
 	virtual bool Initialize(SSystemGlobalEnvironment& env, const SSystemInitParams& initParams) override;
 	virtual void OnSystemEvent(ESystemEvent event, UINT_PTR wparam, UINT_PTR lparam) override;
 
+	virtual void OnPostUpdate(float fDeltaTime) override;
+	virtual void OnPreRender() override {}
+	virtual void OnSaveGame(ISaveGame* pSaveGame) override {}
+	virtual void OnLoadGame(ILoadGame* pLoadGame) override {}
+	virtual void OnLevelEnd(const char* nextLevel) override {}
+	virtual void OnActionEvent(const SActionEvent& event) override;
+
 	virtual void Init(JDKLevelMaps::ELoadingMode mode, const string& directory) override;
+	virtual void FinishInit();
 	virtual void Shutdown() override;
+
+	virtual void RegisterDynamicAnchor(const JDKLevelMaps::Streaming::IMapAnchor* pAnchor, uint16 radius) override;
+	virtual void UnregisterDynamicAnchor(const JDKLevelMaps::Streaming::IMapAnchor* pAnchor) override;
+
+	virtual JDKLevelMaps::Streaming::TStaticAnchorID RegisterPointAnchor(Vec3 anchorPos, uint16 radius) override;
+	virtual void UnregisterPointAnchor(JDKLevelMaps::Streaming::TStaticAnchorID id) override;
+	virtual void UpdatePointAnchor(JDKLevelMaps::Streaming::TStaticAnchorID id, Vec3 pos) override;
 	
-	virtual void LoadAll() override;
 	virtual void UnloadAll() override;
 
 	virtual const JDKLevelMaps::Maps::ILevelMap* GetMap(JDKLevelMaps::EMapType type) const override;

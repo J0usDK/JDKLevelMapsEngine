@@ -16,11 +16,17 @@ namespace JDKLevelMaps::Maps
 		virtual ~CBaseFullMap() = default;
 
 		EMapType GetType() const override;
+		const char* GetFilePath() const override;
 		bool IsValid() const override;
 		size_t GetMemoryUsage() const override;
+		const SMapHeader& GetHeader() const override;
+		uint32 GetMaxCapacity() const override;
+
+		CBaseFullMap* AsFullMap() override;
+		const CBaseFullMap* AsFullMap() const override;
 
 	protected:
-		const uint8* GetTileData(size_t tileIndex) const;
+		const uint8* GetTileData(uint32 tileIndex) const;
 
 	protected:
 		SMapHeader m_header;
@@ -29,6 +35,8 @@ namespace JDKLevelMaps::Maps
 	private:
 		std::unique_ptr<uint8[]> m_packedData;
 		size_t m_packedDataSize = 0;
+
+		string m_mapFilePath;
 
 		std::vector<uint32> m_tileOffsets;
 	};

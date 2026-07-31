@@ -14,7 +14,17 @@ namespace JDKLevelMaps::Bootstrap
 		void SetLoadingDirectory(const string& directory);
 		void SetLoadingStrategy(std::unique_ptr<ILoadingStrategy> strategy);
 
+		void RegisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 radius);
+		void UnregisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor);
+
+		Streaming::TStaticAnchorID RegisterPointAnchor(Vec3 anchorPos, uint16 radius);
+		void UnregisterPointAnchor(Streaming::TStaticAnchorID id);
+		void UpdatePointAnchor(Streaming::TStaticAnchorID id, Vec3 pos);
+
 		void LoadMaps(Maps::Database::CMapsDatabase& db);
+
+		void PreUpdate();
+		void PostUpdate(Maps::Database::CMapsDatabase& db);
 
 	private:
 		string m_loadingDirectory = "";

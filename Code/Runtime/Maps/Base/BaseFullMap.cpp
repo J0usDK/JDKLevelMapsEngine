@@ -9,7 +9,8 @@ namespace JDKLevelMaps::Maps
 		m_header(loadedMap.header),
 		m_packedData(std::move(loadedMap.packedData)),
 		m_packedDataSize(loadedMap.packedDataSize),
-		m_tileOffsets(std::move(loadedMap.tileOffsets))
+		m_tileOffsets(std::move(loadedMap.tileOffsets)),
+		m_mapFilePath(loadedMap.mapFilePath)
 	{
 		const size_t expectedSize = static_cast<size_t>(m_header.tileCountX * m_header.tileCountY);
 
@@ -19,7 +20,7 @@ namespace JDKLevelMaps::Maps
 			&& m_tileOffsets.size() == expectedSize;
 	}
 
-	const uint8* CBaseFullMap::GetTileData(size_t tileIndex) const
+	const uint8* CBaseFullMap::GetTileData(uint32 tileIndex) const
 	{
 		if (tileIndex >= m_tileOffsets.size())
 			return nullptr;
@@ -31,6 +32,12 @@ namespace JDKLevelMaps::Maps
 	}
 
 	EMapType CBaseFullMap::GetType() const { return m_header.mapType; }
+	const char* CBaseFullMap::GetFilePath() const { return m_mapFilePath.c_str(); }
 	size_t CBaseFullMap::GetMemoryUsage() const { return sizeof(SMapHeader) + (m_tileOffsets.capacity() * sizeof(uint32)) + m_packedDataSize; }
 	bool CBaseFullMap::IsValid() const { return m_isValid; }
+	const SMapHeader& CBaseFullMap::GetHeader() const { return m_header; }
+	uint32 CBaseFullMap::GetMaxCapacity() const { return static_cast<uint32>(m_tileOffsets.capacity()); }
+
+	CBaseFullMap* CBaseFullMap::AsFullMap() { return this; }
+	const CBaseFullMap* CBaseFullMap::AsFullMap() const { return this; }
 }

@@ -46,6 +46,8 @@ add_sources("Bootstrap_uber.cpp"
         "Bootstrap/Loaders/ILoadingStrategy.h"
         "Bootstrap/Loaders/FullLoad.h"
         "Bootstrap/Loaders/FullLoad.cpp"
+        "Bootstrap/Loaders/SpatialLoad.h"
+        "Bootstrap/Loaders/SpatialLoad.cpp"
 )
 add_sources("Bootstrap_uber.cpp"
     PROJECTS Plugin
@@ -89,6 +91,7 @@ add_sources("Shared_uber.cpp"
         "Shared/MapHeader.h"
         "Shared/MapLayers.h"
         "Shared/ILevelMap.h"
+        "Shared/IMapAnchor.h"
         "Shared/IJDKLevelMapsPlugin.h"
         "Shared/IVegetationMap.h"
 )

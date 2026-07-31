@@ -30,7 +30,7 @@ namespace JDKLevelMaps::Maps
 
 		const uint32 tileX = gridX / m_header.tileSize;
 		const uint32 tileY = gridY / m_header.tileSize;
-		const uint64 tileIndex = static_cast<uint64>(tileY) * m_header.tileCountX + tileX;
+		const uint32 tileIndex = tileY * m_header.tileCountX + tileX;
 
 		const uint8* pTileData = GetTileData(tileIndex);
 		if (!pTileData)
@@ -42,4 +42,6 @@ namespace JDKLevelMaps::Maps
 
 		return pTileData[localIndex];
 	}
+
+	const IVegetationMap* CVegetationFullMap::AsVegetationMap() const { return this; }
 }

@@ -66,7 +66,24 @@ void JDKLevelMaps::Maps::Database::CMapsDatabase::UnregisterAll()
 	m_levelMaps.clear();
 }
 
+const std::vector<std::unique_ptr<JDKLevelMaps::Maps::ILevelMap>>& JDKLevelMaps::Maps::Database::CMapsDatabase::GetMaps() const
+{
+	return m_levelMaps;
+}
+
 const JDKLevelMaps::Maps::ILevelMap* JDKLevelMaps::Maps::Database::CMapsDatabase::GetMap(EMapType type) const
+{
+	auto it = std::lower_bound(m_levelMaps.begin(), m_levelMaps.end(), type,
+		[type](const std::unique_ptr<ILevelMap>& map, EMapType t)
+		{ return map->GetType() < t; });
+
+	if (it != m_levelMaps.end())
+		return it->get();
+
+	return nullptr;
+}
+
+JDKLevelMaps::Maps::ILevelMap* JDKLevelMaps::Maps::Database::CMapsDatabase::GetMap(EMapType type)
 {
 	auto it = std::lower_bound(m_levelMaps.begin(), m_levelMaps.end(), type,
 		[type](const std::unique_ptr<ILevelMap>& map, EMapType t)
