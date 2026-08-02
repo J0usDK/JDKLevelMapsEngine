@@ -17,22 +17,26 @@ namespace JDKLevelMaps::Bootstrap
 		for (auto& state : m_streamingStates)
 			FlushStreamingState(state);
 
-		if (!m_pendingDispatches.empty())
-			DispatchPendingRequests();
+		m_streamer.DispatchPendingRequests();
 	}
 
 	void CSpatialLoad::UnloadAll(Maps::Database::CMapsDatabase& db)
 	{
 		m_streamingStates.clear();
-		m_registeredDynamicAnchors.clear();
-		m_registeredStaticAnchors.clear();
+		m_stateLookup.fill(nullptr);
 
-		m_loadingPool.clear();
-		m_freeLoadingSlots.clear();
-		m_pendingDispatches.clear();
-		m_runningJobs.clear();
+		m_pendingDynamicAnchors.clear();
+		m_pendingStaticAnchors.clear();
+
+		m_streamer.Reset();
 
 		db.UnregisterAll();
+	}
+
+	CSpatialLoad::SMapStreamingState* CSpatialLoad::FindStreamingState(EMapType targetMap)
+	{
+		CRY_ASSERT_MESSAGE(static_cast<size_t>(targetMap) < static_cast<size_t>(EMapType::Count), "Invalid EMapType passed to SpatialLoad!");
+		return m_stateLookup[static_cast<size_t>(targetMap)];
 	}
 
 	void CSpatialLoad::LoadMapsAsync(Maps::Database::CMapsDatabase& db, const string& directory)
@@ -56,68 +60,58 @@ namespace JDKLevelMaps::Bootstrap
 		db.RegisterMapsBatch(loadedResults);
 	}
 
-	uint32 CSpatialLoad::ComputeTileBudget(const SMapHeader& header) const
-	{
-		const uint64 totalTiles = static_cast<uint64>(header.tileCountX) * header.tileCountY;
-		uint64 budget = 0;
-
-		auto addBudget = [&](const auto& anchorList) -> bool
-		{
-			for (const auto& anchor : anchorList)
-			{
-				const uint64 side = static_cast<uint64>(anchor.radius) * 2 + 1;
-				budget += side * side;
-				if (budget >= totalTiles)
-					return true;
-			}
-			return false;
-		};
-
-		if (addBudget(m_registeredDynamicAnchors)) return static_cast<uint32>(totalTiles);
-		if (addBudget(m_registeredStaticAnchors)) return static_cast<uint32>(totalTiles);
-
-		return static_cast<uint32>(budget);
-	}
-
 	void CSpatialLoad::AllocatePools(const Maps::Database::CMapsDatabase& db)
 	{
-		m_streamingStates.clear();
 		uint32 totalBudget = 0;
 		uint32 maxMapBudget = 0;
 
+		InitializeMapStates(db, totalBudget, maxMapBudget);
+
+		std::vector<SEarlyDynamic>().swap(m_pendingDynamicAnchors);
+		std::vector<SEarlyStatic>().swap(m_pendingStaticAnchors);
+
+		AllocateGlobalBuffers(totalBudget, maxMapBudget);
+	}
+
+	void CSpatialLoad::InitializeMapStates(const Maps::Database::CMapsDatabase& db, uint32& outTotalBudget, uint32& outMaxBudget)
+	{
+		m_streamingStates.clear();
+		m_streamingStates.reserve(db.GetMaps().size());
+
 		for (const auto& pMap : db.GetMaps())
 		{
-			if (!pMap || !pMap->IsValid())
-				continue;
-
+			if (!pMap || !pMap->IsValid()) continue;
 			Maps::CBaseSpatialMap* pSpatialMap = pMap->AsSpatialMap();
-			if (!pSpatialMap)
-				continue;
+			if (!pSpatialMap) continue;
 
-			const uint32 tileBudget = ComputeTileBudget(pSpatialMap->GetHeader());
-			pSpatialMap->SetMaximalCapacity(tileBudget, pSpatialMap->GetTileByteSize());
-			m_streamingStates.emplace_back(pSpatialMap, pSpatialMap->GetMaxCapacity());
+			const EMapType currentType = pSpatialMap->GetType();
 
+			m_streamingStates.emplace_back(pSpatialMap);
 			auto& state = m_streamingStates.back();
-			for (const auto& dyn : m_registeredDynamicAnchors)
-				state.anchorProcessor.RegisterDynamicAnchor(dyn.pAnchor, dyn.radius);
-			for (const auto& stat : m_registeredStaticAnchors)
-				state.anchorProcessor.RegisterPointAnchor(stat.id, stat.pos, stat.radius);
+			m_stateLookup[static_cast<size_t>(currentType)] = &state;
 
-			totalBudget += tileBudget;
-			maxMapBudget = std::max(maxMapBudget, tileBudget);
+			for (const auto& dyn : m_pendingDynamicAnchors)
+				if (dyn.targetMap == currentType)
+					state.anchorProcessor.RegisterDynamicAnchor(dyn.pAnchor, dyn.radius);
+			for (const auto& stat : m_pendingStaticAnchors)
+				if (stat.targetMap == currentType)
+					state.anchorProcessor.RegisterPointAnchor(stat.id, stat.pos, stat.radius);
+
+			const uint32 tileBudget = state.anchorProcessor.ComputeTileBudget();
+			state.InitTables(tileBudget);
+			pSpatialMap->SetMaximalCapacity(tileBudget, pSpatialMap->GetTileByteSize());
+
+			outTotalBudget += tileBudget;
+			outMaxBudget = std::max(outMaxBudget, tileBudget);
 		}
+	}
 
-		m_scratchDecrements.reserve(maxMapBudget);
-		m_scratchIncrements.reserve(maxMapBudget);
+	void CSpatialLoad::AllocateGlobalBuffers(uint32 totalBudget, uint32 maxBudget)
+	{
+		m_scratchDecrements.reserve(maxBudget);
+		m_scratchIncrements.reserve(maxBudget);
 
-		m_loadingPool.resize(totalBudget);
-		m_freeLoadingSlots.reserve(totalBudget);
-		m_pendingDispatches.reserve(totalBudget);
-		m_runningJobs.reserve(totalBudget);
-
-		for (uint32 i = totalBudget; i > 0; --i)
-			m_freeLoadingSlots.push_back(i - 1);
+		m_streamer.Initialize(totalBudget);
 	}
 
 	std::unique_ptr<Maps::ILevelMap> CSpatialLoad::LoadMapInternal(const string& filePath)
@@ -149,95 +143,97 @@ namespace JDKLevelMaps::Bootstrap
 		}
 	}
 
-	void CSpatialLoad::RegisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 radius)
+	void CSpatialLoad::RegisterDynamicAnchor(EMapType targetMap, const Streaming::IMapAnchor* pAnchor, uint16 radius)
 	{
 		if (!pAnchor) return;
-		m_registeredDynamicAnchors.emplace_back(pAnchor, radius);
-		for (auto& state : m_streamingStates)
-			state.anchorProcessor.RegisterDynamicAnchor(pAnchor, radius);
-	}
 
-	void CSpatialLoad::UnregisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor)
-	{
-		for (size_t i = 0; i < m_registeredDynamicAnchors.size(); ++i)
+		if (auto* pState = FindStreamingState(targetMap))
 		{
-			if (m_registeredDynamicAnchors[i].pAnchor == pAnchor)
-			{
-				m_registeredDynamicAnchors[i] = m_registeredDynamicAnchors.back();
-				m_registeredDynamicAnchors.pop_back();
-				break;
-			}
+			pState->anchorProcessor.RegisterDynamicAnchor(pAnchor, radius);
+			return;
 		}
 
-		for (auto& state : m_streamingStates)
-			state.anchorProcessor.UnregisterDynamicAnchor(pAnchor);
+		m_pendingDynamicAnchors.emplace_back(targetMap, pAnchor, radius);
 	}
 
-	Streaming::TStaticAnchorID CSpatialLoad::RegisterPointAnchor(Vec3 anchorPos, uint16 radius)
+	void CSpatialLoad::UnregisterDynamicAnchor(EMapType targetMap, const Streaming::IMapAnchor* pAnchor)
+	{
+		if (!pAnchor) return;
+
+		if (auto* pState = FindStreamingState(targetMap))
+		{
+			pState->anchorProcessor.UnregisterDynamicAnchor(pAnchor);
+			return;
+		}
+
+		for (size_t i = 0; i < m_pendingDynamicAnchors.size(); ++i)
+		{
+			if (m_pendingDynamicAnchors[i].targetMap == targetMap && m_pendingDynamicAnchors[i].pAnchor == pAnchor)
+			{
+				m_pendingDynamicAnchors[i] = m_pendingDynamicAnchors.back();
+				m_pendingDynamicAnchors.pop_back();
+				return;
+			}
+		}
+	}
+
+	Streaming::TStaticAnchorID CSpatialLoad::RegisterPointAnchor(EMapType targetMap, Vec3 anchorPos, uint16 radius)
 	{
 		const auto id = m_nextStaticAnchorID++;
-		m_registeredStaticAnchors.emplace_back(id, anchorPos, radius);
+		if (auto* pState = FindStreamingState(targetMap))
+		{
+			pState->anchorProcessor.RegisterPointAnchor(id, anchorPos, radius);
+			return id;
+		}
 
-		for (auto& state : m_streamingStates)
-			state.anchorProcessor.RegisterPointAnchor(id, anchorPos, radius);
-
+		m_pendingStaticAnchors.emplace_back(targetMap, id, anchorPos, radius);
 		return id;
 	}
 
-	void CSpatialLoad::UnregisterPointAnchor(Streaming::TStaticAnchorID anchorID)
+	void CSpatialLoad::UnregisterPointAnchor(EMapType targetMap, Streaming::TStaticAnchorID anchorID)
 	{
-		for (size_t i = 0; i < m_registeredStaticAnchors.size(); ++i)
+		if (auto* pState = FindStreamingState(targetMap))
 		{
-			if (m_registeredStaticAnchors[i].id == anchorID)
-			{
-				m_registeredStaticAnchors[i] = m_registeredStaticAnchors.back();
-				m_registeredStaticAnchors.pop_back();
-				break;
-			}
+			pState->anchorProcessor.UnregisterPointAnchor(anchorID);
+			return;
 		}
 
-		for (auto& state : m_streamingStates)
-			state.anchorProcessor.UnregisterPointAnchor(anchorID);
+		for (size_t i = 0; i < m_pendingStaticAnchors.size(); ++i)
+		{
+			if (m_pendingStaticAnchors[i].targetMap == targetMap && m_pendingStaticAnchors[i].id == anchorID)
+			{
+				m_pendingStaticAnchors[i] = m_pendingStaticAnchors.back();
+				m_pendingStaticAnchors.pop_back();
+				return;
+			}
+		}
 	}
 
-	void CSpatialLoad::UpdatePointAnchor(Streaming::TStaticAnchorID anchorID, Vec3 pos)
+	void CSpatialLoad::UpdatePointAnchor(EMapType targetMap, Streaming::TStaticAnchorID anchorID, Vec3 pos)
 	{
-		for (auto& anchor : m_registeredStaticAnchors)
+		if (auto* pState = FindStreamingState(targetMap))
 		{
-			if (anchor.id == anchorID)
-			{
-				anchor.pos = pos;
-				break;
-			}
+			pState->anchorProcessor.UpdateStaticAnchor(anchorID, pos);
+			return;
 		}
 
-		for (auto& state : m_streamingStates)
-			state.anchorProcessor.UpdateStaticAnchor(anchorID, pos);
+		for (auto& anchor : m_pendingStaticAnchors)
+		{
+			if (anchor.targetMap == targetMap && anchor.id == anchorID)
+			{
+				anchor.pos = pos;
+				return;
+			}
+		}
 	}
 
 	void CSpatialLoad::PreUpdate()
 	{
-		for (size_t i = 0; i < m_runningJobs.size();)
+		m_streamer.ProcessCompletedRequests([this](EMapType mapType, uint32 tileIndex)
 		{
-			const uint32 poolIdx = m_runningJobs[i];
-			SPendingTileLoad& req = m_loadingPool[poolIdx];
-
-			if (req.jobState.IsRunning())
-			{
-				++i;
-				continue;
-			}
-
-			if (req.succeeded && !req.abandoned)
-				req.pState->pMap->CommitTile(req.tileIndex, req.reservedSlot);
-			else
-				req.pState->pMap->ReleaseTileSlotWithoutCommit(req.reservedSlot);
-
-			req.pState->activeJobs.Remove(req.tileIndex);
-			m_freeLoadingSlots.push_back(poolIdx);
-			m_runningJobs[i] = m_runningJobs.back();
-			m_runningJobs.pop_back();
-		}
+			if (auto* pState = FindStreamingState(mapType))
+				pState->activeJobs.Remove(tileIndex);
+		});
 	}
 
 	void CSpatialLoad::PostUpdate(Maps::Database::CMapsDatabase& db)
@@ -245,8 +241,7 @@ namespace JDKLevelMaps::Bootstrap
 		for (auto& state : m_streamingStates)
 			FlushStreamingState(state);
 
-		if (!m_pendingDispatches.empty())
-			DispatchPendingRequests();
+		m_streamer.DispatchPendingRequests();
 	}
 
 	void CSpatialLoad::ProcessDeferred(SMapStreamingState& state)
@@ -283,29 +278,6 @@ namespace JDKLevelMaps::Bootstrap
 		state.activeJobs.FlushRebuild();
 	}
 
-	void CSpatialLoad::DispatchPendingRequests()
-	{
-		for (uint32 poolIdx : m_pendingDispatches)
-		{
-			SPendingTileLoad* pReq = &m_loadingPool[poolIdx];
-
-			if (pReq->abandoned)
-			{
-				pReq->pState->pMap->ReleaseTileSlotWithoutCommit(pReq->reservedSlot);
-				m_freeLoadingSlots.push_back(poolIdx);
-				continue;
-			}
-			m_runningJobs.push_back(poolIdx);
-
-			gEnv->pJobManager->AddLambdaJob("LoadSpatialTile", [pReq]()
-			{
-				const STileEntry& entry = pReq->pState->pMap->GetTileEntry(pReq->tileIndex);
-				pReq->succeeded = Maps::CMapFileReader::ReadTileRaw(pReq->pState->pMap->GetFilePath(), entry, pReq->pBuffer);
-			}, JobManager::eRegularPriority, &pReq->jobState);
-		}
-		m_pendingDispatches.clear();
-	}
-
 	bool CSpatialLoad::IncrementTileRef(uint32 tileIndex, SMapStreamingState& state)
 	{
 		uint32* pRefCount = state.tileRefCounts.GetValuePtr(tileIndex);
@@ -339,14 +311,9 @@ namespace JDKLevelMaps::Bootstrap
 
 		state.tileRefCounts.Insert(tileIndex, 1);
 
-		CRY_ASSERT_MESSAGE(!m_freeLoadingSlots.empty(), "[JDKLevelMaps] Out of loading slots. Budget calculation failed.");
-		const uint32 poolSlot = m_freeLoadingSlots.back();
-		m_freeLoadingSlots.pop_back();
-
-		m_loadingPool[poolSlot].Init(&state, tileIndex, slot, pBuffer);
-
+		const uint32 poolSlot = m_streamer.QueueLoad(state.pMap, tileIndex, slot, pBuffer);
 		state.activeJobs.Insert(tileIndex, poolSlot);
-		m_pendingDispatches.push_back(poolSlot);
+
 		return true;
 	}
 
@@ -361,7 +328,7 @@ namespace JDKLevelMaps::Bootstrap
 			const uint32 poolIdx = state.activeJobs.Find(tileIndex);
 			if (poolIdx != Core::Containers::kInvalidValue)
 			{
-				m_loadingPool[poolIdx].abandoned = true;
+				m_streamer.CancelLoad(poolIdx);
 				state.activeJobs.Remove(tileIndex);
 			}
 		}

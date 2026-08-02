@@ -64,6 +64,28 @@ namespace JDKLevelMaps::Streaming
 		UpdateAnchors(m_staticAnchors, outIncrements, outDecrements);
 	}
 
+	uint32 CAnchorProcessor::ComputeTileBudget() const
+	{
+		const uint64 totalTiles = static_cast<uint64>(m_header.tileCountX) * m_header.tileCountY;
+		uint64 budget = 0;
+
+		auto addBudget = [&](const auto& anchorList) -> bool
+		{
+			for (const auto& anchor : anchorList)
+			{
+				const uint64 side = static_cast<uint64>(anchor.radius) * 2 + 1;
+				budget += side * side;
+				if (budget >= totalTiles) return true;
+			}
+			return false;
+		};
+
+		if (addBudget(m_dynamicAnchors)) return static_cast<uint32>(totalTiles);
+		if (addBudget(m_staticAnchors)) return static_cast<uint32>(totalTiles);
+
+		return static_cast<uint32>(budget);
+	}
+
 	template<typename TAnchor>
 	void CAnchorProcessor::ProcessRemovals(std::vector<TAnchor>& anchors, std::vector<uint32>& outDecrements)
 	{

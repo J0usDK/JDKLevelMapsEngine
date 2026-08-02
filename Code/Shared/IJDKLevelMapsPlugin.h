@@ -33,12 +33,12 @@ namespace JDKLevelMaps
 		virtual void FinishInit() = 0;
 		virtual void Shutdown() = 0;
 
-		virtual void RegisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 radius) = 0;
-		virtual void UnregisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor) = 0;
+		virtual void RegisterDynamicAnchor(EMapType targetMap, const Streaming::IMapAnchor* pAnchor, uint16 radius) = 0;
+		virtual void UnregisterDynamicAnchor(EMapType targetMap, const Streaming::IMapAnchor* pAnchor) = 0;
 
-		virtual Streaming::TStaticAnchorID RegisterPointAnchor(Vec3 anchorPos, uint16 radius) = 0;
-		virtual void UnregisterPointAnchor(Streaming::TStaticAnchorID id) = 0;
-		virtual void UpdatePointAnchor(Streaming::TStaticAnchorID id, Vec3 pos) = 0;
+		virtual Streaming::TStaticAnchorID RegisterPointAnchor(EMapType targetMap, Vec3 anchorPos, uint16 radius) = 0;
+		virtual void UnregisterPointAnchor(EMapType targetMap, Streaming::TStaticAnchorID id) = 0;
+		virtual void UpdatePointAnchor(EMapType targetMap, Streaming::TStaticAnchorID id, Vec3 pos) = 0;
 
 		virtual void UnloadAll() = 0;
 

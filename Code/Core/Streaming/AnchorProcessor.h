@@ -22,6 +22,7 @@ namespace JDKLevelMaps::Streaming
 		void UpdateStaticAnchor(TStaticAnchorID id, Vec3 pos);
 
 		void CalculateTileDiffs(std::vector<uint32>& outIncrements, std::vector<uint32>& outDecrements);
+		uint32 ComputeTileBudget() const;
 
 	private:
 		struct SAnchorBase

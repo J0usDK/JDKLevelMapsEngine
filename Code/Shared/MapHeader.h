@@ -8,7 +8,9 @@ namespace JDKLevelMaps
 
 	enum class EMapType : uint16
 	{
-		VegetationDensity = 0
+		VegetationDensity = 0,
+
+		Count
 	};
 
 #pragma pack(push, 1)

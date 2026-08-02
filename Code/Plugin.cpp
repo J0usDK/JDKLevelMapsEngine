@@ -113,34 +113,34 @@ void CJDKLevelMapsEngine::Init(JDKLevelMaps::ELoadingMode mode, const string& di
 	g_state->pBootstrap->SetLoadingStrategy(std::move(pLoadingStrategy));
 }
 
-void CJDKLevelMapsEngine::RegisterDynamicAnchor(const JDKLevelMaps::Streaming::IMapAnchor* pAnchor, uint16 radius)
+void CJDKLevelMapsEngine::RegisterDynamicAnchor(JDKLevelMaps::EMapType targetMap, const JDKLevelMaps::Streaming::IMapAnchor* pAnchor, uint16 radius)
 {
 	if (!g_state || !g_state->pBootstrap || !g_state->pDatabase) return;
-	g_state->pBootstrap->RegisterDynamicAnchor(pAnchor, radius);
+	g_state->pBootstrap->RegisterDynamicAnchor(targetMap, pAnchor, radius);
 }
 
-void CJDKLevelMapsEngine::UnregisterDynamicAnchor(const JDKLevelMaps::Streaming::IMapAnchor* pAnchor)
+void CJDKLevelMapsEngine::UnregisterDynamicAnchor(JDKLevelMaps::EMapType targetMap, const JDKLevelMaps::Streaming::IMapAnchor* pAnchor)
 {
 	if (!g_state || !g_state->pBootstrap || !g_state->pDatabase) return;
-	g_state->pBootstrap->UnregisterDynamicAnchor(pAnchor);
+	g_state->pBootstrap->UnregisterDynamicAnchor(targetMap, pAnchor);
 }
 
-JDKLevelMaps::Streaming::TStaticAnchorID CJDKLevelMapsEngine::RegisterPointAnchor(Vec3 anchorPos, uint16 radius)
+JDKLevelMaps::Streaming::TStaticAnchorID CJDKLevelMapsEngine::RegisterPointAnchor(JDKLevelMaps::EMapType targetMap, Vec3 anchorPos, uint16 radius)
 {
 	if (!g_state || !g_state->pBootstrap || !g_state->pDatabase) return -1;
-	return g_state->pBootstrap->RegisterPointAnchor(anchorPos, radius);
+	return g_state->pBootstrap->RegisterPointAnchor(targetMap, anchorPos, radius);
 }
 
-void CJDKLevelMapsEngine::UnregisterPointAnchor(JDKLevelMaps::Streaming::TStaticAnchorID id)
+void CJDKLevelMapsEngine::UnregisterPointAnchor(JDKLevelMaps::EMapType targetMap, JDKLevelMaps::Streaming::TStaticAnchorID id)
 {
 	if (!g_state || !g_state->pBootstrap || !g_state->pDatabase) return;
-	g_state->pBootstrap->UnregisterPointAnchor(id);
+	g_state->pBootstrap->UnregisterPointAnchor(targetMap, id);
 }
 
-void CJDKLevelMapsEngine::UpdatePointAnchor(JDKLevelMaps::Streaming::TStaticAnchorID id, Vec3 pos)
+void CJDKLevelMapsEngine::UpdatePointAnchor(JDKLevelMaps::EMapType targetMap, JDKLevelMaps::Streaming::TStaticAnchorID id, Vec3 pos)
 {
 	if (!g_state || !g_state->pBootstrap || !g_state->pDatabase) return;
-	g_state->pBootstrap->UpdatePointAnchor(id, pos);
+	g_state->pBootstrap->UpdatePointAnchor(targetMap, id, pos);
 }
 
 void CJDKLevelMapsEngine::FinishInit()

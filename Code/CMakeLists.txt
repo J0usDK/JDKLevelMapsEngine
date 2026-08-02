@@ -26,14 +26,20 @@ add_sources("Code_uber.cpp"
 add_sources("Core_uber.cpp"
     PROJECTS Plugin
     SOURCE_GROUP "Core"
-        "Core/AnchorProcessor.h"
-        "Core/AnchorProcessor.cpp"
 )
 add_sources("Core_uber.cpp"
     PROJECTS Plugin
     SOURCE_GROUP "Core\\\\Containers"
         "Core/Containers/OpenAddressTable.h"
         "Core/Containers/OpenAddressTable.cpp"
+)
+add_sources("Core_uber.cpp"
+    PROJECTS Plugin
+    SOURCE_GROUP "Core\\\\Streaming"
+        "Core/Streaming/AnchorProcessor.h"
+        "Core/Streaming/AnchorProcessor.cpp"
+        "Core/Streaming/TileStreamer.h"
+        "Core/Streaming/TileStreamer.cpp"
 )
 
 add_sources("Bootstrap_uber.cpp"

@@ -18,29 +18,29 @@ namespace JDKLevelMaps::Bootstrap
 		m_loadingStrategy = std::move(strategy);
 	}
 
-	void CBootstrapManager::RegisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor, uint16 radius)
+	void CBootstrapManager::RegisterDynamicAnchor(EMapType targetMap, const Streaming::IMapAnchor* pAnchor, uint16 radius)
 	{
-		m_loadingStrategy->RegisterDynamicAnchor(pAnchor, radius);
+		m_loadingStrategy->RegisterDynamicAnchor(targetMap, pAnchor, radius);
 	}
 
-	void CBootstrapManager::UnregisterDynamicAnchor(const Streaming::IMapAnchor* pAnchor)
+	void CBootstrapManager::UnregisterDynamicAnchor(EMapType targetMap,  const Streaming::IMapAnchor* pAnchor)
 	{
-		m_loadingStrategy->UnregisterDynamicAnchor(pAnchor);
+		m_loadingStrategy->UnregisterDynamicAnchor(targetMap, pAnchor);
 	}
 
-	Streaming::TStaticAnchorID CBootstrapManager::RegisterPointAnchor(Vec3 anchorPos, uint16 radius)
+	Streaming::TStaticAnchorID CBootstrapManager::RegisterPointAnchor(EMapType targetMap, Vec3 anchorPos, uint16 radius)
 	{
-		return m_loadingStrategy->RegisterPointAnchor(anchorPos, radius);
+		return m_loadingStrategy->RegisterPointAnchor(targetMap, anchorPos, radius);
 	}
 
-	void CBootstrapManager::UnregisterPointAnchor(Streaming::TStaticAnchorID id)
+	void CBootstrapManager::UnregisterPointAnchor(EMapType targetMap, Streaming::TStaticAnchorID id)
 	{
-		m_loadingStrategy->UnregisterPointAnchor(id);
+		m_loadingStrategy->UnregisterPointAnchor(targetMap, id);
 	}
 
-	void CBootstrapManager::UpdatePointAnchor(Streaming::TStaticAnchorID id, Vec3 pos)
+	void CBootstrapManager::UpdatePointAnchor(EMapType targetMap, Streaming::TStaticAnchorID id, Vec3 pos)
 	{
-		m_loadingStrategy->UpdatePointAnchor(id, pos);
+		m_loadingStrategy->UpdatePointAnchor(targetMap, id, pos);
 	}
 
 	void CBootstrapManager::LoadMaps(Maps::Database::CMapsDatabase& db)

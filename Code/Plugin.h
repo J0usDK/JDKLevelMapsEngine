@@ -40,12 +40,12 @@ public:
 	virtual void FinishInit();
 	virtual void Shutdown() override;
 
-	virtual void RegisterDynamicAnchor(const JDKLevelMaps::Streaming::IMapAnchor* pAnchor, uint16 radius) override;
-	virtual void UnregisterDynamicAnchor(const JDKLevelMaps::Streaming::IMapAnchor* pAnchor) override;
+	virtual void RegisterDynamicAnchor(JDKLevelMaps::EMapType targetMap, const JDKLevelMaps::Streaming::IMapAnchor* pAnchor, uint16 radius) override;
+	virtual void UnregisterDynamicAnchor(JDKLevelMaps::EMapType targetMap, const JDKLevelMaps::Streaming::IMapAnchor* pAnchor) override;
 
-	virtual JDKLevelMaps::Streaming::TStaticAnchorID RegisterPointAnchor(Vec3 anchorPos, uint16 radius) override;
-	virtual void UnregisterPointAnchor(JDKLevelMaps::Streaming::TStaticAnchorID id) override;
-	virtual void UpdatePointAnchor(JDKLevelMaps::Streaming::TStaticAnchorID id, Vec3 pos) override;
+	virtual JDKLevelMaps::Streaming::TStaticAnchorID RegisterPointAnchor(JDKLevelMaps::EMapType targetMap, Vec3 anchorPos, uint16 radius) override;
+	virtual void UnregisterPointAnchor(JDKLevelMaps::EMapType targetMap, JDKLevelMaps::Streaming::TStaticAnchorID id) override;
+	virtual void UpdatePointAnchor(JDKLevelMaps::EMapType targetMap, JDKLevelMaps::Streaming::TStaticAnchorID id, Vec3 pos) override;
 	
 	virtual void UnloadAll() override;
 
