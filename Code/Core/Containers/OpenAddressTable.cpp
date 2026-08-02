@@ -15,12 +15,36 @@ namespace JDKLevelMaps::Core::Containers
 	uint32 COpenAddressTable::NextPowerOfTwo(uint32 v)
 	{
 		if (v <= 1) return 1;
+
+		JDK_SOFT_ASSERT(v < 0x80000000, "OpenAddressTable capacity overflow. Requested capacity is too large. Table will fail silently.");
+
 		v--;
 		COMPUTE_NEXT_POT_RETURN(v);
 	}
 
+	uint32 COpenAddressTable::FindIndex(uint32 key) const
+	{
+		if (m_table.empty()) return kInvalidKey;
+
+		DBG_PROBE_INIT();
+		uint32 idx = Hash(key) & m_mask;
+
+		for (;;)
+		{
+			DBG_PROBE_CHECK(m_table.size());
+
+			const SHashEntry& e = m_table[idx];
+			if (e.key == key) return idx;
+			if (e.key == kInvalidKey) return kInvalidKey;
+
+			idx = (idx + 1) & m_mask;
+		}
+	}
+
 	void COpenAddressTable::Initialize(uint32 maxElements)
 	{
+		JDK_ASSERT_ERROR(m_table.empty(), "COpenAddressTable::Initialize() called on already initialized table. Use Reset() to clear the table first.");
+
 		if (maxElements == 0) return;
 
 		uint64 targetCapacity = (static_cast<uint64>(maxElements) * 10 + 6) / 7;
@@ -34,52 +58,28 @@ namespace JDKLevelMaps::Core::Containers
 
 	uint32 COpenAddressTable::Find(uint32 key) const
 	{
-		if (m_table.empty())
-			return kInvalidValue;
-		
-		DBG_PROBE_INIT();
-
-		uint32 idx = Hash(key) & m_mask;
-		for (;;)
-		{
-			DBG_PROBE_CHECK(m_table.size());
-
-			const SHashEntry& e = m_table[idx];
-			if (e.key == key)
-				return e.value;
-			if (e.key == kInvalidKey)
-				return kInvalidValue;
-			idx = (idx + 1) & m_mask;
-		}
+		if (key == kInvalidKey) return kInvalidValue;
+		uint32 idx = FindIndex(key);
+		return (idx != kInvalidKey) ? m_table[idx].value : kInvalidValue;
 	}
 
 	uint32* COpenAddressTable::GetValuePtr(uint32 key)
 	{
-		if (m_table.empty())
-			return nullptr;
-
-		DBG_PROBE_INIT();
-
-		uint32 idx = Hash(key) & m_mask;
-		for (;;)
-		{
-			DBG_PROBE_CHECK(m_table.size());
-
-			SHashEntry& e = m_table[idx];
-			if (e.key == key)
-				return &e.value;
-			if (e.key == kInvalidKey)
-				return nullptr;
-			idx = (idx + 1) & m_mask;
-		}
+		if (key == kInvalidKey) return nullptr;
+		uint32 idx = FindIndex(key);
+		return (idx != kInvalidKey) ? &m_table[idx].value : nullptr;
 	}
 
 	void COpenAddressTable::Insert(uint32 key, uint32 value)
 	{
-		if (m_table.empty()) return;
+		JDK_ASSERT_ERROR(key != kInvalidKey, "Attempting to insert reserved kInvalidKey (0xFFFFFFFF). This will break the hash table.");
+		if (key == kInvalidKey || m_table.empty()) return;
 
 		if (m_activeCount >= m_resizeThreshold)
+		{
+			JDK_ASSERT_FATAL(m_table.size() < 0x7FFFFFFF, "OpenAddressTable capacity overflow during auto-resize. Table will degrade into an infinite loop.");
 			Resize(static_cast<uint32>(m_table.size() * 2));
+		}
 
 		DBG_PROBE_INIT();
 
@@ -108,20 +108,12 @@ namespace JDKLevelMaps::Core::Containers
 
 	void COpenAddressTable::Remove(uint32 key)
 	{
-		if (m_table.empty()) return;
+		JDK_SOFT_ASSERT(key != kInvalidKey, "Attempting to remove reserved kInvalidKey.");
+		if (key == kInvalidKey || m_table.empty()) return;
 
-		DBG_PROBE_INIT();
+		uint32 i = FindIndex(key);
+		if (i == kInvalidKey) return;
 
-		uint32 i = Hash(key) & m_mask;
-		for (;;)
-		{
-			DBG_PROBE_CHECK(m_table.size());
-
-			if (m_table[i].key == kInvalidKey) return;
-			if (m_table[i].key == key) break;
-
-			i = (i + 1) & m_mask;
-		}
 		m_activeCount--;
 
 		uint32 j = i;
@@ -157,13 +149,19 @@ namespace JDKLevelMaps::Core::Containers
 		m_table.clear();
 		m_mask = 0;
 		m_resizeThreshold = 0;
+		m_activeCount = 0;
 	}
 
 	void COpenAddressTable::Resize(uint32 newCapacity)
 	{
 		uint32 actualCapacity = NextPowerOfTwo(newCapacity);
+
+		JDK_ASSERT_ERROR(actualCapacity > m_table.size(), "Resize capacity is smaller or equal to current. Check for uint32 overflow or invalid manual Resize call.");
+
 		if (actualCapacity <= m_table.size())
 			return;
+
+		JDK_PERF_WARN("OpenAddressTable::Resize() triggered mid-frame. This causes reallocation and may stutter the game.");
 
 		std::vector<SHashEntry> newTable(actualCapacity, SHashEntry{});
 		uint32 newMask = actualCapacity - 1;
