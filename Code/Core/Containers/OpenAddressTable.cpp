@@ -1,6 +1,10 @@
 #include "StdAfx.h"
 #include "OpenAddressTable.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
 namespace JDKLevelMaps::Core::Containers
 {
 	uint32 COpenAddressTable::Hash(uint32 x)
@@ -12,13 +16,24 @@ namespace JDKLevelMaps::Core::Containers
 
 	uint32 COpenAddressTable::NextPowerOfTwo(uint32 v)
 	{
+		if (v <= 1)
+			return 1;
 		v--;
+
+#if defined(__GNUC__) || defined(__clang__)
+		return 1U << (32 - _builtin_clz(v));
+#elif defined(_MSC_VER)
+		unsigned long index;
+		_BitScanReverse(&index, v);
+		return 1U << (index + 1);
+#else
 		v |= v >> 1;
 		v |= v >> 2;
 		v |= v >> 4;
 		v |= v >> 8;
 		v |= v >> 16;
 		return ++v;
+#endif
 	}
 
 	void COpenAddressTable::Initialize(uint32 maxElements)
