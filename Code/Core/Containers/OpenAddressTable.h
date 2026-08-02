@@ -6,7 +6,6 @@
 namespace JDKLevelMaps::Core::Containers
 {
 	constexpr uint32 kInvalidKey = 0xFFFFFFFF;
-	constexpr uint32 kTombstoneKey = 0xFFFFFFFE;
 	constexpr uint32 kInvalidValue = 0xFFFFFFFF;
 
 	struct SHashEntry
@@ -42,23 +41,15 @@ namespace JDKLevelMaps::Core::Containers
 
 		size_t GetMemoryUsage() const;
 
-		void FlushRebuild();
-
 	private:
 		static uint32 Hash(uint32 x);
 		static uint32 NextPowerOfTwo(uint32 v);
-
-		void Rebuild();
 
 	private:
 		std::vector<SHashEntry> m_table;
 		uint32 m_mask = 0;
 
 		uint32 m_activeCount = 0;
-		uint32 m_tombstoneCount = 0;
-		uint32 m_capacityLimit = 0;
-
-		bool m_bIsDirty = false;
-		bool m_bIsRebuilding = false;
+		uint32 m_resizeThreshold = 0;
 	};
 }

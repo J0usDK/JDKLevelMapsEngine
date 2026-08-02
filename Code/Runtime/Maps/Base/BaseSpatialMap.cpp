@@ -90,11 +90,6 @@ namespace JDKLevelMaps::Maps
 		return m_tileDirectory[tileIndex];
 	}
 
-	void CBaseSpatialMap::FlushPendingMaintenance()
-	{
-		m_lookupTable.FlushRebuild();
-	}
-
 	const uint8* CBaseSpatialMap::GetTileData(uint32 tileIndex) const
 	{
 		const uint32 slot = m_lookupTable.Find(tileIndex);

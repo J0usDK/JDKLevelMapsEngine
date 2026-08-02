@@ -272,10 +272,6 @@ namespace JDKLevelMaps::Bootstrap
 
 		for (uint32 tileIndex : m_scratchDecrements)
 			DecrementTileRef(tileIndex, state);
-
-		state.pMap->FlushPendingMaintenance();
-		state.tileRefCounts.FlushRebuild();
-		state.activeJobs.FlushRebuild();
 	}
 
 	bool CSpatialLoad::IncrementTileRef(uint32 tileIndex, SMapStreamingState& state)

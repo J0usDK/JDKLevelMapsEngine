@@ -36,8 +36,6 @@ namespace JDKLevelMaps::Maps
 		void SetTileDirectory(std::vector<STileEntry>&& directory);
 		const STileEntry& GetTileEntry(uint32 tileIndex) const;
 
-		void FlushPendingMaintenance();
-
 	protected:
 		const uint8* GetTileData(uint32 tileIndex) const;
 

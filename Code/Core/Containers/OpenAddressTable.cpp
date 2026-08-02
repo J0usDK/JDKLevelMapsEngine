@@ -1,9 +1,7 @@
 #include "StdAfx.h"
 #include "OpenAddressTable.h"
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#endif
+#include "Core/Platforms/ContainersPlatform.h"
 
 namespace JDKLevelMaps::Core::Containers
 {
@@ -16,62 +14,35 @@ namespace JDKLevelMaps::Core::Containers
 
 	uint32 COpenAddressTable::NextPowerOfTwo(uint32 v)
 	{
-		if (v <= 1)
-			return 1;
+		if (v <= 1) return 1;
 		v--;
-
-#if defined(__GNUC__) || defined(__clang__)
-		return 1U << (32 - _builtin_clz(v));
-#elif defined(_MSC_VER)
-		unsigned long index;
-		_BitScanReverse(&index, v);
-		return 1U << (index + 1);
-#else
-		v |= v >> 1;
-		v |= v >> 2;
-		v |= v >> 4;
-		v |= v >> 8;
-		v |= v >> 16;
-		return ++v;
-#endif
+		COMPUTE_NEXT_POT_RETURN(v);
 	}
 
 	void COpenAddressTable::Initialize(uint32 maxElements)
 	{
-		if (maxElements == 0)
-			return;
+		if (maxElements == 0) return;
 
 		uint64 targetCapacity = (static_cast<uint64>(maxElements) * 10 + 6) / 7;
 		uint32 actualCapacity = NextPowerOfTwo(static_cast<uint32>(targetCapacity));
 
 		m_table.assign(actualCapacity, SHashEntry{});
 		m_mask = actualCapacity - 1;
-
 		m_activeCount = 0;
-		m_tombstoneCount = 0;
-		m_capacityLimit = actualCapacity / 4;
-
-		m_bIsDirty = false;
-		m_bIsRebuilding = false;
+		m_resizeThreshold = (actualCapacity * 3) / 4;
 	}
 
 	uint32 COpenAddressTable::Find(uint32 key) const
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
-
 		if (m_table.empty())
 			return kInvalidValue;
-
-#if !defined(_RELEASE)
-		uint32 dbgProbes = 0;
-#endif
+		
+		DBG_PROBE_INIT();
 
 		uint32 idx = Hash(key) & m_mask;
 		for (;;)
 		{
-#if !defined (_RELEASE)
-			CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop in Find(). Table is 100% full without empty slots.");
-#endif
+			DBG_PROBE_CHECK(m_table.size());
 
 			const SHashEntry& e = m_table[idx];
 			if (e.key == key)
@@ -84,20 +55,15 @@ namespace JDKLevelMaps::Core::Containers
 
 	uint32* COpenAddressTable::GetValuePtr(uint32 key)
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
-
 		if (m_table.empty())
 			return nullptr;
 
-#if !defined(_RELEASE)
-		uint32 dbgProbes = 0;
-#endif
+		DBG_PROBE_INIT();
+
 		uint32 idx = Hash(key) & m_mask;
 		for (;;)
 		{
-#if !defined(_RELEASE)
-			CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop in GetValuePtr().");
-#endif
+			DBG_PROBE_CHECK(m_table.size());
 
 			SHashEntry& e = m_table[idx];
 			if (e.key == key)
@@ -110,26 +76,17 @@ namespace JDKLevelMaps::Core::Containers
 
 	void COpenAddressTable::Insert(uint32 key, uint32 value)
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
-
 		if (m_table.empty()) return;
 
-		if (m_activeCount + m_tombstoneCount >= (m_table.size() * 3) / 4)
+		if (m_activeCount >= m_resizeThreshold)
 			Resize(static_cast<uint32>(m_table.size() * 2));
 
+		DBG_PROBE_INIT();
+
 		uint32 idx = Hash(key) & m_mask;
-		uint32 tombstoneIdx = kInvalidKey;
-
-#if !defined(_RELEASE)
-		uint32 dbgProbes = 0;
-#endif
-
 		for (;;)
 		{
-#if !defined (_RELEASE)
-			CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop in Insert(). Table is 100% full without empty slots.");
-#endif
-
+			DBG_PROBE_CHECK(m_table.size());
 			SHashEntry& entry = m_table[idx];
 
 			if (entry.key == key)
@@ -137,29 +94,11 @@ namespace JDKLevelMaps::Core::Containers
 				entry.value = value;
 				return;
 			}
-			if (entry.key == kTombstoneKey)
+			if (entry.key == kInvalidKey)
 			{
-				if (tombstoneIdx == kInvalidKey)
-					tombstoneIdx = idx;
-			}
-			else if (entry.key == kInvalidKey)
-			{
-				if (tombstoneIdx == kInvalidKey)
-				{
-					m_table[idx].key = key;
-					m_table[idx].value = value;
-				}
-				else
-				{
-					m_table[tombstoneIdx].key = key;
-					m_table[tombstoneIdx].value = value;
-					m_tombstoneCount--;
-				}
-
-				++m_activeCount;
-
-				if (m_tombstoneCount > m_capacityLimit || m_tombstoneCount > m_activeCount / 2)
-					m_bIsDirty = true;
+				entry.key = key;
+				entry.value = value;
+				m_activeCount++;
 				return;
 			}
 			
@@ -169,158 +108,91 @@ namespace JDKLevelMaps::Core::Containers
 
 	void COpenAddressTable::Remove(uint32 key)
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
-
 		if (m_table.empty()) return;
 
-#if !defined(_RELEASE)
-		uint32 dbgProbes = 0;
-#endif
+		DBG_PROBE_INIT();
 
-		uint32 idx = Hash(key) & m_mask;
+		uint32 i = Hash(key) & m_mask;
 		for (;;)
 		{
-#if !defined (_RELEASE)
-			CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop in Remove(). Table is 100% full without empty slots.");
-#endif
+			DBG_PROBE_CHECK(m_table.size());
 
-			SHashEntry& entry = m_table[idx];
-			if (entry.key == key)
+			if (m_table[i].key == kInvalidKey) return;
+			if (m_table[i].key == key) break;
+
+			i = (i + 1) & m_mask;
+		}
+		m_activeCount--;
+
+		uint32 j = i;
+		uint32 k = (j + 1) & m_mask;
+
+		for (;;)
+		{
+			if (m_table[k].key == kInvalidKey)
 			{
-				entry.key = kTombstoneKey;
-				entry.value = kInvalidValue;
-
-				m_activeCount--;
-				m_tombstoneCount++;
-
-				if (m_tombstoneCount > m_capacityLimit || m_tombstoneCount > m_activeCount / 2)
-					m_bIsDirty = true;
+				m_table[j].key = kInvalidKey;
+				m_table[j].value = kInvalidValue;
 				return;
 			}
-			if (entry.key == kInvalidKey)
-				return;
-			
-			idx = (idx + 1) & m_mask;
+
+			uint32 idealSlot = Hash(m_table[k].key) & m_mask;
+			if (((j - idealSlot) & m_mask) < ((k - idealSlot) & m_mask))
+			{
+				m_table[j] = m_table[k];
+				j = k;
+			}
+			k = (k + 1) & m_mask;
 		}
 	}
 
 	void COpenAddressTable::Clear()
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
-
 		std::fill(m_table.begin(), m_table.end(), SHashEntry{});
-
 		m_activeCount = 0;
-		m_tombstoneCount = 0;
-
-		m_bIsDirty = false;
-		m_bIsRebuilding = false;
 	}
 
 	void COpenAddressTable::Reset()
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Rebuild is active. Safe access guaranteed only in Update phase");
-
 		m_table.clear();
 		m_mask = 0;
-
-		m_activeCount = 0;
-		m_tombstoneCount = 0;
-		m_capacityLimit = 0;
-
-		m_bIsDirty = false;
-		m_bIsRebuilding = false;
+		m_resizeThreshold = 0;
 	}
 
 	void COpenAddressTable::Resize(uint32 newCapacity)
 	{
-		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Cannot resize while rebuilding");
-
 		uint32 actualCapacity = NextPowerOfTwo(newCapacity);
 		if (actualCapacity <= m_table.size())
 			return;
 
 		std::vector<SHashEntry> newTable(actualCapacity, SHashEntry{});
 		uint32 newMask = actualCapacity - 1;
-		uint32 newActiveCount = 0;
 
 		for (const auto& e : m_table)
 		{
-			if (e.key == kInvalidKey || e.key == kTombstoneKey)
-				continue;
+			if (e.key == kInvalidKey) continue;
 
-#if !defined(_RELEASE)
-			uint32 dbgProbes = 0;
-#endif
+			DBG_PROBE_INIT();
+
 			uint32 idx = Hash(e.key) & newMask;
 			for (;;)
 			{
-#if !defined (_RELEASE)
-				CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop during Resize().");
-#endif
+				DBG_PROBE_CHECK(newTable.size());
+
 				if (newTable[idx].key == kInvalidKey)
 				{
 					newTable[idx].key = e.key;
 					newTable[idx].value = e.value;
-					newActiveCount++;
 					break;
 				}
-				idx = (idx + 1) & m_mask;
+				idx = (idx + 1) & newMask;
 			}
 		}
 
 		std::swap(m_table, newTable);
 
 		m_mask = newMask;
-		m_activeCount = newActiveCount;
-		m_tombstoneCount = 0;
-		m_capacityLimit = actualCapacity / 4;
-		m_bIsDirty = false;
-	}
-
-	void COpenAddressTable::FlushRebuild()
-	{
-		if (!m_bIsDirty)
-			return;
-
-		Rebuild();
-	}
-
-	void COpenAddressTable::Rebuild()
-	{
-		m_bIsRebuilding = true;
-
-		std::vector<SHashEntry> newTable(m_table.size(), SHashEntry{});
-		for (const auto& e : m_table)
-		{
-			if (e.key != kInvalidKey && e.key != kTombstoneKey)
-			{
-#if !defined(_RELEASE)
-				uint32 dbgProbes = 0;
-#endif
-
-				uint32 idx = Hash(e.key) & m_mask;
-				for (;;)
-				{
-#if !defined (_RELEASE)
-					CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop in Rebuild(). Table is 100% full without empty slots.");
-#endif
-
-					if (newTable[idx].key == kInvalidKey)
-					{
-						newTable[idx] = e;
-						break;
-					}
-					idx = (idx + 1) & m_mask;
-				}
-			}
-		}
-
-		m_table = std::move(newTable);
-		m_tombstoneCount = 0;
-
-		m_bIsDirty = false;
-		m_bIsRebuilding = false;
+		m_resizeThreshold = (actualCapacity * 3) / 4;
 	}
 
 	size_t COpenAddressTable::GetMemoryUsage() const { return m_table.capacity() * sizeof(SHashEntry); }
