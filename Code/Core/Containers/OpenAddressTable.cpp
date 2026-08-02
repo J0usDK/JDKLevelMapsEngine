@@ -114,6 +114,9 @@ namespace JDKLevelMaps::Core::Containers
 
 		if (m_table.empty()) return;
 
+		if (m_activeCount + m_tombstoneCount >= (m_table.size() * 3) / 4)
+			Resize(static_cast<uint32>(m_table.size() * 2));
+
 		uint32 idx = Hash(key) & m_mask;
 		uint32 tombstoneIdx = kInvalidKey;
 
@@ -227,6 +230,52 @@ namespace JDKLevelMaps::Core::Containers
 
 		m_bIsDirty = false;
 		m_bIsRebuilding = false;
+	}
+
+	void COpenAddressTable::Resize(uint32 newCapacity)
+	{
+		CRY_ASSERT_MESSAGE(!m_bIsRebuilding, "[JDKLevelMaps] Cannot resize while rebuilding");
+
+		uint32 actualCapacity = NextPowerOfTwo(newCapacity);
+		if (actualCapacity <= m_table.size())
+			return;
+
+		std::vector<SHashEntry> newTable(actualCapacity, SHashEntry{});
+		uint32 newMask = actualCapacity - 1;
+		uint32 newActiveCount = 0;
+
+		for (const auto& e : m_table)
+		{
+			if (e.key == kInvalidKey || e.key == kTombstoneKey)
+				continue;
+
+#if !defined(_RELEASE)
+			uint32 dbgProbes = 0;
+#endif
+			uint32 idx = Hash(e.key) & newMask;
+			for (;;)
+			{
+#if !defined (_RELEASE)
+				CRY_ASSERT_MESSAGE(++dbgProbes <= m_table.size(), "[JDKLevelMaps] Infinite loop during Resize().");
+#endif
+				if (newTable[idx].key == kInvalidKey)
+				{
+					newTable[idx].key = e.key;
+					newTable[idx].value = e.value;
+					newActiveCount++;
+					break;
+				}
+				idx = (idx + 1) & m_mask;
+			}
+		}
+
+		std::swap(m_table, newTable);
+
+		m_mask = newMask;
+		m_activeCount = newActiveCount;
+		m_tombstoneCount = 0;
+		m_capacityLimit = actualCapacity / 4;
+		m_bIsDirty = false;
 	}
 
 	void COpenAddressTable::FlushRebuild()
